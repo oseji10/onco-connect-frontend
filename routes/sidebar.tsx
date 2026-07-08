@@ -133,6 +133,12 @@ const routes: IRoute[] = [
     icon: ClipboardList,
     name: "Sponsors & Partners",
   },
+
+  {
+    path: "/icw/speaker-management",
+    icon: Group,
+    name: "Speaker Management",
+  },
   // {
   //   path: "/icw/scanner",
   //   icon: UtensilsCrossed,
