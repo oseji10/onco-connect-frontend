@@ -16,6 +16,9 @@ import {
   KeyRound,
   FileSignature,
   ShieldAlert,
+  FileText,
+  Presentation,
+  Mic,
 } from "lucide-react";
 import api from "@/lib/api";
 
@@ -120,7 +123,24 @@ const ACCENT_MAP: Record<string, string> = {
   "Incidents for Date": "#f59e0b",
   // "Rooms Checked for Date": "#8b5cf6",
   "Meals (Unique)": "#14b8a6",
+  // Abstract submission metrics
+  "Abstracts Submitted": "#8b5cf6",
+  "Abstracts Accepted": "#22c55e",
+  "Poster Presentations": "#06b6d4",
+  "Oral Presentations": "#f97316",
 };
+
+// Distinct icons for specific secondary stats (falls back to a plain
+// accent-coloured dot for anything not listed here).
+function getSecondaryStatIcon(title: string, accentColor: string): React.ReactNode {
+  const icons: Record<string, React.ReactNode> = {
+    "Abstracts Submitted": <FileText className="w-5 h-5" style={{ color: accentColor }} />,
+    "Abstracts Accepted": <CheckCircle2 className="w-5 h-5" style={{ color: accentColor }} />,
+    "Poster Presentations": <Presentation className="w-5 h-5" style={{ color: accentColor }} />,
+    "Oral Presentations": <Mic className="w-5 h-5" style={{ color: accentColor }} />,
+  };
+  return icons[title] ?? <span className="w-2.5 h-2.5 rounded-full" style={{ background: accentColor }} />;
+}
 
 // Stats shown as large KPI cards at the top — excluded from the secondary grid
 const TOP_KPI_TITLES = new Set([
@@ -533,9 +553,9 @@ export default function Dashboard() {
             <h1 className="text-xl sm:text-2xl font-bold leading-tight">
               International Cancer Week Central Dashboard
             </h1>
-            <p className="mt-2 text-sm text-white/75">
-              Historical command snapshot — attendance, incidents, meals &amp; certificates.
-            </p>
+            <h3 >
+              2026 · {venue} 
+            </h3>
             {error && (
               <p className="mt-3 text-sm text-red-100 bg-red-500/20 border border-red-200/20 rounded-xl px-3 py-2 inline-block">
                 {error}
@@ -607,7 +627,12 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Secondary overviewStats grid — remaining stats, all clickable */}
+      {/* Secondary overviewStats grid — remaining stats, all clickable.
+          Abstract submission/acceptance/presentation-type counts (added by
+          the backend to overviewStats) render here automatically, picking
+          up their accent colour and icon from ACCENT_MAP / getSecondaryStatIcon
+          above — no structural change needed when the backend starts
+          sending them. */}
       {stats.filter((s) => !TOP_KPI_TITLES.has(s.title)).length > 0 && (
         <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
           {stats
@@ -621,7 +646,7 @@ export default function Dashboard() {
                   value={item.value}
                   note={item.note}
                   accentColor={accent}
-                  icon={<span className="w-2.5 h-2.5 rounded-full" style={{ background: accent }} />}
+                  icon={getSecondaryStatIcon(item.title, accent)}
                   onClick={() => goToOverviewDetail(item)}
                 />
               );

@@ -105,10 +105,22 @@ const routes: IRoute[] = [
     name: "Accreditation",
   },
 
-    {
-    path: "/icw/resources",
-    icon: BadgeCheck,
-    name: "Resource Mgt.",
+  //   {
+  //   path: "/icw/resources",
+  //   icon: BadgeCheck,
+  //   name: "Resource Mgt.",
+  // },
+
+  {
+    path: "/icw/abstract-management",
+    icon: FileBadge,
+    name: "Abstract Management",
+  },
+
+  {
+    path: "/icw/abstract-review",
+    icon: VoteIcon,
+    name: "Review Abstract",
   },
 
   {

@@ -21,7 +21,7 @@ import {
   EyeOff,
   Key,
 } from "lucide-react";
-import api from "../../../lib/api";
+import api from "../../lib/api";
 
 interface Facility {
   id: number;

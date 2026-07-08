@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useRef, useState } from "react";
+import React, { FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { Input, Button } from "@roketid/windmill-react-ui";
 import {
@@ -9,13 +9,6 @@ import {
   X,
   Camera,
   Upload,
-  User,
-  Phone,
-  Mail,
-  MapPin,
-  Building,
-  Calendar,
-  Hash,
   ChevronRight,
   CheckCircle,
   Heart,
@@ -27,6 +20,18 @@ import {
 import toast from "react-hot-toast";
 
 import api from "../../lib/api";
+import {
+  CATEGORY_DISPLAY_NAMES,
+  getCategoryBackendValue,
+  TITLES,
+  NIGERIAN_STATES,
+  PARTICIPATION_TYPES,
+  GENDERS,
+  YES_NO,
+  COUNTRIES,
+  PHONE_COUNTRY_CODES,
+  DEFAULT_PHONE_COUNTRY_CODE,
+} from "../../types/registration-constants";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,11 +43,14 @@ type FormData = {
   lastName: string;
   otherNames: string;
   email: string;
+  country: string;
+  stateOfResidence: string;
+  phoneCountryCode: string;
   phoneNumber: string;
   organizationName: string;
-  stateOfResidence: string;
   gender: string;
-  maritalStatus: string;
+  physicallyChallenged: "Yes" | "No" | "";
+  accessibilityNeeds: string;
   photo: File | null;
   photoPreview: string | null;
 };
@@ -61,38 +69,7 @@ type RegistrationResponse = {
   email: string;
 };
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const CATEGORY_MAP = {
-  "Healthcare Professional": "healthcare_professional",
-  "Researcher": "researcher",
-  "Government Official": "government_official",
-  "Development Partner": "development_partner",
-  "Student": "student",
-  "Cancer Survivor": "cancer_survivor",
-  "Media Representative": "media_representative",
-  "General Public": "general_public",
-} as const;
-
-const CATEGORY_DISPLAY_NAMES = Object.keys(CATEGORY_MAP);
-
-const TITLES = [
-  "Prof", "Dr", "Pharm", "Nrs", "Mr", "Mrs", "Ms", 
-  "Chief", "Imam", "Pastor", "Barrister", "Engr", "Arc"
-];
-
-const NIGERIAN_STATES = [
-  "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue",
-  "Borno", "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu",
-  "FCT Abuja", "Gombe", "Imo", "Jigawa", "Kaduna", "Kano", "Katsina",
-  "Kebbi", "Kogi", "Kwara", "Lagos", "Nasarawa", "Niger", "Ogun",
-  "Ondo", "Osun", "Oyo", "Plateau", "Rivers", "Sokoto", "Taraba",
-  "Yobe", "Zamfara"
-];
-
-const PARTICIPATION_TYPES = ["Physical", "Virtual"];
-const GENDERS = ["Male", "Female"];
-const MARITAL_STATUSES = ["Single", "Married", "Divorced", "Widowed", "Prefer not to say"];
+// ─── Constants (page-specific) ─────────────────────────────────────────────
 
 const EMPTY_FORM: FormData = {
   category: "",
@@ -102,20 +79,19 @@ const EMPTY_FORM: FormData = {
   lastName: "",
   otherNames: "",
   email: "",
+  country: "Nigeria",
+  stateOfResidence: "",
+  phoneCountryCode: DEFAULT_PHONE_COUNTRY_CODE,
   phoneNumber: "",
   organizationName: "",
-  stateOfResidence: "",
   gender: "",
-  maritalStatus: "",
+  physicallyChallenged: "",
+  accessibilityNeeds: "",
   photo: null,
   photoPreview: null,
 };
 
-// ─── Helper Functions ─────────────────────────────────────────────────────
-
-function getCategoryBackendValue(displayName: string): string {
-  return CATEGORY_MAP[displayName as keyof typeof CATEGORY_MAP] || displayName;
-}
+// ─── Helper Components ─────────────────────────────────────────────────────
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
@@ -173,22 +149,28 @@ function PhotoUpload({
       const video = videoRef.current;
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
-          onPhotoChange(file);
-          stopCamera();
-        }
-      }, 'image/jpeg', 0.8);
+
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            const file = new File([blob], `photo-${Date.now()}.jpg`, {
+              type: "image/jpeg",
+            });
+            onPhotoChange(file);
+            stopCamera();
+          }
+        },
+        "image/jpeg",
+        0.8
+      );
     }
   };
 
   const stopCamera = () => {
     if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach((track) => track.stop());
       setStream(null);
     }
     setIsCameraMode(false);
@@ -322,7 +304,10 @@ function ProgressSteps({ currentStep }: { currentStep: number }) {
       </div>
       <div className="flex justify-between mt-3 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {steps.map((step) => (
-          <span key={step.number} className={step.number <= currentStep ? "text-teal-600 dark:text-teal-400" : ""}>
+          <span
+            key={step.number}
+            className={step.number <= currentStep ? "text-teal-600 dark:text-teal-400" : ""}
+          >
             {step.label}
           </span>
         ))}
@@ -341,7 +326,6 @@ export default function RegistrationPage() {
   const [step, setStep] = useState(1);
   const [submitted, setSubmitted] = useState(false);
 
-  // Reset form function
   const resetForm = () => {
     setFormData(EMPTY_FORM);
     setErrors({});
@@ -368,15 +352,21 @@ export default function RegistrationPage() {
       if (!formData.firstName.trim()) newErrors.firstName = "First name is required.";
       if (!formData.lastName.trim()) newErrors.lastName = "Last name is required.";
       if (!formData.gender) newErrors.gender = "Please select a gender.";
-      if (!formData.maritalStatus) newErrors.maritalStatus = "Please select a marital status.";
+      if (!formData.physicallyChallenged)
+        newErrors.physicallyChallenged = "Please let us know if you require accessibility support.";
     }
 
     if (n === 3) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email))
         newErrors.email = "Please enter a valid email address.";
-      if (formData.phoneNumber.trim().length < 8)
+      if (!formData.country) newErrors.country = "Please select a country.";
+      if (!formData.stateOfResidence.trim())
+        newErrors.stateOfResidence =
+          formData.country === "Nigeria"
+            ? "Please select your state of residence."
+            : "Please enter your state/region of residence.";
+      if (formData.phoneNumber.trim().length < 7)
         newErrors.phoneNumber = "Please enter a valid phone number.";
-      if (!formData.stateOfResidence) newErrors.stateOfResidence = "Please select your state.";
     }
 
     if (n === 4) {
@@ -414,12 +404,15 @@ export default function RegistrationPage() {
       payload.append("lastName", formData.lastName.trim());
       payload.append("otherNames", formData.otherNames.trim() || "");
       payload.append("email", formData.email.trim());
+      payload.append("country", formData.country);
+      payload.append("stateOfResidence", formData.stateOfResidence.trim());
+      payload.append("phoneCountryCode", formData.phoneCountryCode);
       payload.append("phoneNumber", formData.phoneNumber.trim());
       payload.append("organizationName", formData.organizationName.trim() || "");
-      payload.append("stateOfResidence", formData.stateOfResidence);
       payload.append("gender", formData.gender);
-      payload.append("maritalStatus", formData.maritalStatus);
-      
+      payload.append("physicallyChallenged", formData.physicallyChallenged === "Yes" ? "1" : "0");
+      payload.append("accessibilityNeeds", formData.accessibilityNeeds.trim() || "");
+
       if (formData.photo) {
         payload.append("photo", formData.photo);
       }
@@ -436,7 +429,6 @@ export default function RegistrationPage() {
 
       toast.success(data.message || "Registration successful!");
       setSubmitted(true);
-      
     } catch (err: any) {
       const validationErrors = err?.response?.data?.errors;
       let message = err?.response?.data?.message || "Registration failed. Please try again.";
@@ -454,7 +446,7 @@ export default function RegistrationPage() {
     }
   }
 
-  // ── Success screen with Back button ────────────────────────────────────────
+  // ── Success screen ────────────────────────────────────────────────────
 
   if (submitted) {
     return (
@@ -469,13 +461,12 @@ export default function RegistrationPage() {
           <p className="text-gray-500 dark:text-gray-400 leading-relaxed mb-8">
             Your details have been recorded successfully. Kindly check your email for further details.
           </p>
-          
+
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Button
               onClick={() => {
                 resetForm();
-                // Scroll to top when resetting
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                window.scrollTo({ top: 0, behavior: "smooth" });
               }}
               className="rounded-2xl h-12 px-6 bg-gradient-to-r from-teal-600 to-emerald-600 border-0 hover:from-teal-700 hover:to-emerald-700 shadow-lg shadow-teal-500/25 hover:shadow-xl transition-all"
             >
@@ -484,14 +475,6 @@ export default function RegistrationPage() {
                 Register Another Participant
               </span>
             </Button>
-            
-            {/* <Button
-              layout="outline"
-              onClick={() => router.push("/conference/registration-management")}
-              className="rounded-2xl h-12 px-6 border-2 border-gray-200 dark:border-gray-600 hover:border-teal-500 hover:text-teal-600 transition-colors"
-            >
-              <span className="font-semibold">View All Registrations</span>
-            </Button> */}
           </div>
         </div>
       </div>
@@ -543,17 +526,15 @@ export default function RegistrationPage() {
         <div className="relative mb-10 overflow-hidden rounded-3xl bg-teal-500 p-8 text-white shadow-xl shadow-teal-500/20">
           <div className="absolute top-0 right-0 -mt-10 -mr-10 w-64 h-64 bg-white/5 rounded-full blur-3xl" />
           <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-48 h-48 bg-white/5 rounded-full blur-3xl" />
-          
+
           <div className="relative">
             <p className="text-sm font-medium uppercase tracking-wider text-teal-100 mb-2">
               About This Event
             </p>
-            <h2 className="text-2xl font-bold mb-3">
-              Uniting Against Cancer
-            </h2>
+            <h2 className="text-2xl font-bold mb-3">Uniting Against Cancer</h2>
             <p className="text-teal-50/90 leading-relaxed max-w-2xl">
-              The International Cancer Week is a global initiative bringing together healthcare professionals, 
-              researchers, advocates, and communities to advance cancer care, share breakthrough research, 
+              The International Cancer Week is a global initiative bringing together healthcare professionals,
+              researchers, advocates, and communities to advance cancer care, share breakthrough research,
               and foster collaboration across borders. Join us in the fight against cancer.
             </p>
           </div>
@@ -562,9 +543,8 @@ export default function RegistrationPage() {
         {/* Form */}
         <div className="rounded-3xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-2xl shadow-gray-200/50 dark:shadow-gray-900/50 overflow-hidden">
           <div className="h-1.5 bg-gradient-to-r from-teal-500 via-emerald-500 to-teal-400" />
-          
+
           <form onSubmit={handleSubmit} className="p-6 sm:p-8 lg:p-10">
-            {/* Progress Steps */}
             <ProgressSteps currentStep={step} />
 
             {/* Step 1: Category */}
@@ -655,7 +635,9 @@ export default function RegistrationPage() {
                     >
                       <option value="">—</option>
                       {TITLES.map((t) => (
-                        <option key={t} value={t}>{t}</option>
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
                       ))}
                     </select>
                     <FieldError message={errors.title} />
@@ -690,7 +672,8 @@ export default function RegistrationPage() {
 
                 <div>
                   <label className="block mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Other Names <span className="text-gray-400 text-xs font-normal">(optional)</span>
+                    Other Names{" "}
+                    <span className="text-gray-400 text-xs font-normal">(optional)</span>
                   </label>
                   <Input
                     className="h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600 focus:border-teal-500 focus:ring-teal-500"
@@ -736,36 +719,52 @@ export default function RegistrationPage() {
 
                 <div>
                   <label className="block mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Marital Status <span className="text-red-500">*</span>
+                    Do you require accessibility support?{" "}
+                    <span className="text-red-500">*</span>
                   </label>
                   <div className="flex flex-wrap gap-3">
-                    {MARITAL_STATUSES.map((m) => (
+                    {YES_NO.map((option) => (
                       <button
-                        key={m}
+                        key={option}
                         type="button"
-                        onClick={() => update("maritalStatus", m)}
+                        onClick={() => update("physicallyChallenged", option as "Yes" | "No")}
                         className={`inline-flex items-center gap-2 px-5 py-3 rounded-full border-2 text-sm font-semibold transition-all duration-200 ${
-                          formData.maritalStatus === m
+                          formData.physicallyChallenged === option
                             ? "border-teal-500 bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-400 shadow-md shadow-teal-500/10"
                             : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-teal-400"
                         }`}
                       >
                         <span
                           className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all ${
-                            formData.maritalStatus === m
+                            formData.physicallyChallenged === option
                               ? "border-teal-500 bg-teal-500"
                               : "border-gray-300 dark:border-gray-500"
                           }`}
                         >
-                          {formData.maritalStatus === m && (
+                          {formData.physicallyChallenged === option && (
                             <span className="w-1.5 h-1.5 rounded-full bg-white block" />
                           )}
                         </span>
-                        {m}
+                        {option}
                       </button>
                     ))}
                   </div>
-                  <FieldError message={errors.maritalStatus} />
+                  <FieldError message={errors.physicallyChallenged} />
+
+                  {formData.physicallyChallenged === "Yes" && (
+                    <div className="mt-4">
+                      <label className="block mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                        Please let us know how we can support you{" "}
+                        <span className="text-gray-400 text-xs font-normal">(optional)</span>
+                      </label>
+                      <textarea
+                        className="w-full h-24 rounded-2xl border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-3 text-sm font-medium focus:border-teal-500 focus:ring-teal-500 transition-colors resize-none"
+                        placeholder="e.g. wheelchair access, sign language interpretation..."
+                        value={formData.accessibilityNeeds}
+                        onChange={(e) => update("accessibilityNeeds", e.target.value)}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -789,15 +788,83 @@ export default function RegistrationPage() {
 
                 <div>
                   <label className="block mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Country <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    className="w-full h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 text-sm font-semibold focus:border-teal-500 focus:ring-teal-500 transition-colors"
+                    value={formData.country}
+                    onChange={(e) => {
+                      update("country", e.target.value);
+                      update("stateOfResidence", "");
+                    }}
+                  >
+                    {COUNTRIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <FieldError message={errors.country} />
+                </div>
+
+                {formData.country === "Nigeria" ? (
+                  <div>
+                    <label className="block mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      State of Residence <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      className="w-full h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 text-sm font-semibold focus:border-teal-500 focus:ring-teal-500 transition-colors"
+                      value={formData.stateOfResidence}
+                      onChange={(e) => update("stateOfResidence", e.target.value)}
+                    >
+                      <option value="">Select state</option>
+                      {NIGERIAN_STATES.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                    <FieldError message={errors.stateOfResidence} />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      State/Region of Residence <span className="text-red-500">*</span>
+                    </label>
+                    <Input
+                      className="h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600 focus:border-teal-500 focus:ring-teal-500"
+                      placeholder="e.g. Ontario, Bavaria..."
+                      value={formData.stateOfResidence}
+                      onChange={(e) => update("stateOfResidence", e.target.value)}
+                    />
+                    <FieldError message={errors.stateOfResidence} />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Phone Number <span className="text-red-500">*</span>
                   </label>
-                  <Input
-                    type="tel"
-                    className="h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600 focus:border-teal-500 focus:ring-teal-500"
-                    placeholder="e.g. 08031234567"
-                    value={formData.phoneNumber}
-                    onChange={(e) => update("phoneNumber", e.target.value)}
-                  />
+                  <div className="flex gap-2">
+                    <select
+                      className="h-12 w-32 shrink-0 rounded-2xl border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 text-sm font-semibold focus:border-teal-500 focus:ring-teal-500 transition-colors"
+                      value={formData.phoneCountryCode}
+                      onChange={(e) => update("phoneCountryCode", e.target.value)}
+                    >
+                      {PHONE_COUNTRY_CODES.map(({ country, dial }) => (
+                        <option key={country} value={dial}>
+                          {dial ? `${dial} ${country}` : country}
+                        </option>
+                      ))}
+                    </select>
+                    <Input
+                      type="tel"
+                      className="h-12 flex-1 rounded-2xl border-2 border-gray-200 dark:border-gray-600 focus:border-teal-500 focus:ring-teal-500"
+                      placeholder="e.g. 8031234567 (no leading 0)"
+                      value={formData.phoneNumber}
+                      onChange={(e) => update("phoneNumber", e.target.value)}
+                    />
+                  </div>
                   <FieldError message={errors.phoneNumber} />
                 </div>
 
@@ -812,23 +879,6 @@ export default function RegistrationPage() {
                     value={formData.organizationName}
                     onChange={(e) => update("organizationName", e.target.value)}
                   />
-                </div>
-
-                <div>
-                  <label className="block mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    State of Residence <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    className="w-full h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 text-sm font-semibold focus:border-teal-500 focus:ring-teal-500 transition-colors"
-                    value={formData.stateOfResidence}
-                    onChange={(e) => update("stateOfResidence", e.target.value)}
-                  >
-                    <option value="">Select state</option>
-                    {NIGERIAN_STATES.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                  <FieldError message={errors.stateOfResidence} />
                 </div>
               </div>
             )}
@@ -852,7 +902,7 @@ export default function RegistrationPage() {
                   }}
                   error={errors.photo}
                 />
-                
+
                 {/* Review Information */}
                 <div className="mt-6 p-5 rounded-2xl bg-gradient-to-br from-teal-50 to-emerald-50 dark:from-gray-700/50 dark:to-gray-700/30 border border-teal-100 dark:border-gray-600">
                   <h4 className="text-sm font-bold uppercase tracking-wide text-teal-700 dark:text-teal-400 mb-4 flex items-center gap-2">
@@ -865,13 +915,21 @@ export default function RegistrationPage() {
                     <div className="text-gray-500 dark:text-gray-400">Participation:</div>
                     <div className="font-semibold text-gray-900 dark:text-white">{formData.participationType}</div>
                     <div className="text-gray-500 dark:text-gray-400">Name:</div>
-                    <div className="font-semibold text-gray-900 dark:text-white">{formData.title} {formData.firstName} {formData.lastName}</div>
+                    <div className="font-semibold text-gray-900 dark:text-white">
+                      {formData.title} {formData.firstName} {formData.lastName}
+                    </div>
                     <div className="text-gray-500 dark:text-gray-400">Email:</div>
                     <div className="font-semibold text-gray-900 dark:text-white">{formData.email}</div>
-                    <div className="text-gray-500 dark:text-gray-400">Phone:</div>
-                    <div className="font-semibold text-gray-900 dark:text-white">{formData.phoneNumber}</div>
-                    <div className="text-gray-500 dark:text-gray-400">State:</div>
+                    <div className="text-gray-500 dark:text-gray-400">Country:</div>
+                    <div className="font-semibold text-gray-900 dark:text-white">{formData.country}</div>
+                    <div className="text-gray-500 dark:text-gray-400">State of Residence:</div>
                     <div className="font-semibold text-gray-900 dark:text-white">{formData.stateOfResidence}</div>
+                    <div className="text-gray-500 dark:text-gray-400">Phone:</div>
+                    <div className="font-semibold text-gray-900 dark:text-white">
+                      {formData.phoneCountryCode} {formData.phoneNumber}
+                    </div>
+                    <div className="text-gray-500 dark:text-gray-400">Accessibility support:</div>
+                    <div className="font-semibold text-gray-900 dark:text-white">{formData.physicallyChallenged}</div>
                   </div>
                 </div>
               </div>
@@ -925,14 +983,23 @@ export default function RegistrationPage() {
 
         {/* Footer */}
         <div className="mt-8 text-center text-sm text-gray-400 dark:text-gray-500">
-          <p>© 2026 National Institute for Cancer Research & Treatment (NICRAT). All rights reserved. <b>Powered by Resilience Nigeria - The Official Technology Partner of The 2026 International Cancer Week</b></p>
+          <p>
+            © 2026 National Institute for Cancer Research & Treatment (NICRAT). All rights reserved.{" "}
+            <b>Powered by Resilience Nigeria - The Official Technology Partner of The 2026 International Cancer Week</b>
+          </p>
         </div>
       </div>
 
       <style jsx global>{`
         @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
         .animate-fadeIn {
           animation: fadeIn 0.4s ease-out;

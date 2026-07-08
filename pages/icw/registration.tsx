@@ -1,8 +1,7 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Input, Button, Badge, Pagination } from "@roketid/windmill-react-ui";
+import { Input, Button, Pagination } from "@roketid/windmill-react-ui";
 import {
   Users,
-  Plus,
   Search,
   Edit,
   Trash2,
@@ -10,7 +9,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  RefreshCcw,
   X,
   Phone,
   Mail,
@@ -22,18 +20,30 @@ import {
   Eye,
   Camera,
   Upload,
-  Image as ImageIcon,
   Send,
+  Accessibility,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
+import {
+  CATEGORY_DISPLAY_NAMES,
+  getCategoryBackendValue,
+  getCategoryDisplayName,
+  TITLES,
+  NIGERIAN_STATES,
+  PARTICIPATION_TYPES,
+  GENDERS,
+  YES_NO,
+  COUNTRIES,
+  PHONE_COUNTRY_CODES,
+  DEFAULT_PHONE_COUNTRY_CODE,
+} from "../../types/registration-constants";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-// Updated to match the actual API response
 type Participant = {
   attendeeId: number;
   firstName: string;
@@ -41,6 +51,7 @@ type Participant = {
   otherNames?: string;
   fullName: string;
   uniqueId: string | null;
+  phoneCountryCode?: string;
   phoneNumber: string;
   email?: string;
   gender: string;
@@ -49,18 +60,11 @@ type Participant = {
   photo?: string | null;
   photoUrl?: string | null;
   title?: string;
-  maritalStatus?: string;
+  country?: string;
   stateOfResidence?: string;
+  physicallyChallenged?: boolean;
+  accessibilityNeeds?: string | null;
   organizationName?: string;
-};
-
-// Extended type for display purposes (adding computed fields)
-type ParticipantWithRef = Participant & {
-  referenceNumber: string;
-  email: string;
-  organizationName: string | null;
-  stateOfResidence: string;
-  registeredAt: string;
 };
 
 type FormData = {
@@ -71,11 +75,14 @@ type FormData = {
   lastName: string;
   otherNames: string;
   email: string;
+  country: string;
+  stateOfResidence: string;
+  phoneCountryCode: string;
   phoneNumber: string;
   organizationName: string;
-  stateOfResidence: string;
   gender: string;
-  maritalStatus: string;
+  physicallyChallenged: "Yes" | "No" | "";
+  accessibilityNeeds: string;
   photo: File | null;
   photoPreview: string | null;
 };
@@ -94,83 +101,7 @@ type RegistrationResponse = {
   email: string;
 };
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-// Category mapping: display text -> backend value
-const CATEGORY_MAP = {
-  "Healthcare Professional": "healthcare_professional",
-  "Researcher": "researcher",
-  "Government Official": "government_official",
-  "Development Partner": "development_partner",
-  "Student": "student",
-  "Cancer Survivor": "cancer_survivor",
-  "Media Representative": "media_representative",
-  "General Public": "general_public",
-} as const;
-
-// Reverse mapping for displaying backend values
-const REVERSE_CATEGORY_MAP = Object.fromEntries(
-  Object.entries(CATEGORY_MAP).map(([display, backend]) => [backend, display])
-);
-
-// For display in the UI
-const CATEGORY_DISPLAY_NAMES = Object.keys(CATEGORY_MAP);
-
-const TITLES = [
-  "Prof",
-  "Dr",
-  "Pharm",
-  "Nrs",
-  "Mr",
-  "Mrs",
-  "Ms",
-  "Chief",
-  "Imam",
-  "Pastor",
-  "Barrister",
-  "Engr",
-  "Arc",
-];
-
-const NIGERIAN_STATES = [
-  "Abia",
-  "Adamawa",
-  "Akwa Ibom",
-  "Anambra",
-  "Bauchi",
-  "Bayelsa",
-  "Benue",
-  "Borno",
-  "Cross River",
-  "Delta",
-  "Ebonyi",
-  "Edo",
-  "Ekiti",
-  "Enugu",
-  "FCT Abuja",
-  "Gombe",
-  "Imo",
-  "Jigawa",
-  "Kaduna",
-  "Kano",
-  "Katsina",
-  "Kebbi",
-  "Kogi",
-  "Kwara",
-  "Lagos",
-  "Nasarawa",
-  "Niger",
-  "Ogun",
-  "Ondo",
-  "Osun",
-  "Oyo",
-  "Plateau",
-  "Rivers",
-  "Sokoto",
-  "Taraba",
-  "Yobe",
-  "Zamfara",
-];
+// ─── Constants (page-specific) ─────────────────────────────────────────────
 
 const EMPTY_FORM: FormData = {
   category: "",
@@ -180,49 +111,23 @@ const EMPTY_FORM: FormData = {
   lastName: "",
   otherNames: "",
   email: "",
+  country: "Nigeria",
+  stateOfResidence: "",
+  phoneCountryCode: DEFAULT_PHONE_COUNTRY_CODE,
   phoneNumber: "",
   organizationName: "",
-  stateOfResidence: "",
   gender: "",
-  maritalStatus: "",
+  physicallyChallenged: "",
+  accessibilityNeeds: "",
   photo: null,
   photoPreview: null,
 };
 
-const PARTICIPATION_TYPES = ["Physical", "Virtual"];
-const GENDERS = ["Male", "Female"];
-const MARITAL_STATUSES = ["Single", "Married", "Divorced", "Widowed", "Prefer not to say"];
-
 const ITEMS_PER_PAGE = 10;
-
-// ─── Helper Functions ─────────────────────────────────────────────────────
-
-// Convert display name to backend value
-function getCategoryBackendValue(displayName: string): string {
-  return CATEGORY_MAP[displayName as keyof typeof CATEGORY_MAP] || displayName;
-}
-
-// Convert backend value to display name
-function getCategoryDisplayName(backendValue: string): string {
-  return REVERSE_CATEGORY_MAP[backendValue] || backendValue;
-}
-
-// Generate a reference number (for display purposes)
-function generateReferenceNumber(index: number): string {
-  const date = new Date();
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `CONF-${year}${month}${day}-${String(index).padStart(4, '0')}`;
-}
 
 // ─── Helper Components ─────────────────────────────────────────────────────
 
-function StatusBadge({
-  status,
-}: {
-  status: "Physical" | "Virtual" | null;
-}) {
+function StatusBadge({ status }: { status: "Physical" | "Virtual" | null }) {
   if (!status) {
     return (
       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
@@ -237,9 +142,7 @@ function StatusBadge({
   };
 
   return (
-    <span
-      className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase ${styles[status]}`}
-    >
+    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase ${styles[status]}`}>
       {status === "Physical" ? "In-Person" : "Virtual"}
     </span>
   );
@@ -253,19 +156,6 @@ function FieldError({ message }: { message?: string }) {
       {message}
     </p>
   );
-}
-
-function formatDate(dateString: string) {
-  if (!dateString) return "—";
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return dateString;
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 // ─── Photo Upload Component ─────────────────────────────────────────────
@@ -287,9 +177,7 @@ function PhotoUpload({
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      onPhotoChange(file);
-    }
+    if (file) onPhotoChange(file);
   };
 
   const startCamera = async () => {
@@ -314,22 +202,26 @@ function PhotoUpload({
       const video = videoRef.current;
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
-          onPhotoChange(file);
-          stopCamera();
-        }
-      }, 'image/jpeg', 0.8);
+
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            const file = new File([blob], `photo-${Date.now()}.jpg`, { type: "image/jpeg" });
+            onPhotoChange(file);
+            stopCamera();
+          }
+        },
+        "image/jpeg",
+        0.8
+      );
     }
   };
 
   const stopCamera = () => {
     if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach((track) => track.stop());
       setStream(null);
     }
     setIsCameraMode(false);
@@ -346,23 +238,11 @@ function PhotoUpload({
         Passport Photo <span className="text-red-500">*</span>
       </label>
 
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleFileSelect}
-        className="hidden"
-      />
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
 
       {isCameraMode ? (
         <div className="relative rounded-2xl overflow-hidden bg-black">
-          <video
-            ref={videoRef}
-            className="w-full max-h-[400px] object-cover"
-            autoPlay
-            playsInline
-          />
+          <video ref={videoRef} className="w-full max-h-[400px] object-cover" autoPlay playsInline />
           <canvas ref={canvasRef} className="hidden" />
           <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-3">
             <button
@@ -424,6 +304,18 @@ function PhotoUpload({
 
 // ─── View Details Modal ─────────────────────────────────────────────────────
 
+function DetailItem({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+      <div className="text-gray-400 dark:text-gray-500 mt-0.5">{icon}</div>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
+        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{value}</p>
+      </div>
+    </div>
+  );
+}
+
 function ViewDetailsModal({
   isOpen,
   onClose,
@@ -440,18 +332,12 @@ function ViewDetailsModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
       <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-gray-800 shadow-2xl border border-gray-100 dark:border-gray-700 animate-slideUp">
-        {/* Header */}
         <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 sticky top-0 z-10">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                Participant Details
-              </h3>
-              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                Complete registration information
-              </p>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Participant Details</h3>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Complete registration information</p>
             </div>
-
             <button
               onClick={onClose}
               className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 shrink-0"
@@ -461,103 +347,85 @@ function ViewDetailsModal({
           </div>
         </div>
 
-        {/* Content */}
         <div className="p-6 space-y-6">
-          {/* Photo and Basic Info */}
           <div className="flex items-start gap-6 pb-6 border-b border-gray-100 dark:border-gray-700">
-            {/* {participant.photo ? (
+            {participant.photoUrl ? (
               <img
-                src={participant.photo}
+                src={`${process.env.NEXT_PUBLIC_API_FILE_URL}${participant.photoUrl}`}
+                width="20%"
                 alt={participant.fullName}
-                className="w-24 h-24 rounded-2xl object-cover border-2 border-gray-200 dark:border-gray-600"
               />
+            ) : participant.photo ? (
+              <img src={participant.photo} alt={participant.fullName} />
             ) : (
               <div className="w-24 h-24 rounded-2xl bg-gray-200 dark:bg-gray-700 flex items-center justify-center border-2 border-gray-200 dark:border-gray-600">
                 <User className="w-12 h-12 text-gray-400" />
               </div>
-            )} */}
-
-            
-{participant.photoUrl ? (
-  <img src={`${process.env.NEXT_PUBLIC_API_FILE_URL}${participant.photoUrl}`} width="20%" alt={participant.fullName} />
-) : participant.photo ? (
-  <img src={participant.photo} alt={participant.fullName} />
-) : (
-  // fallback placeholder
-  <div className="w-24 h-24 rounded-2xl bg-gray-200 dark:bg-gray-700 flex items-center justify-center border-2 border-gray-200 dark:border-gray-600">
-                <User className="w-12 h-12 text-gray-400" />
-              </div>
-)}
+            )}
 
             <div className="flex-1 min-w-0">
-              <h4 className="text-lg font-bold text-gray-900 dark:text-white uppercase">
-                {participant.fullName}
-              </h4>
+              <h4 className="text-lg font-bold text-gray-900 dark:text-white uppercase">{participant.fullName}</h4>
               <p className="text-sm text-gray-600 dark:text-gray-400 font-mono">
                 ID: {participant.uniqueId || "Not assigned"}
               </p>
-              <div className="mt-2">
+              <div className="mt-2 flex items-center gap-2">
                 <StatusBadge status={participant.participationType} />
+                {participant.physicallyChallenged && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                    <Accessibility className="w-3 h-3" />
+                    Accessibility support
+                  </span>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Personal Information */}
           <div>
             <h5 className="text-sm font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">
               <User className="w-4 h-4" />
               Personal Information
             </h5>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <DetailItem icon={<User className="w-4 h-4" />} label="Title" value={participant.title || "—"} />
+              <DetailItem icon={<User className="w-4 h-4" />} label="First Name" value={participant.firstName} />
+              <DetailItem icon={<User className="w-4 h-4" />} label="Last Name" value={participant.lastName} />
+              <DetailItem icon={<User className="w-4 h-4" />} label="Other Names" value={participant.otherNames || "—"} />
+              <DetailItem icon={<User className="w-4 h-4" />} label="Gender" value={participant.gender || "—"} />
               <DetailItem
-                icon={<User className="w-4 h-4" />}
-                label="Title"
-                value={participant.title || "—"}
+                icon={<Accessibility className="w-4 h-4" />}
+                label="Accessibility support needed"
+                value={participant.physicallyChallenged ? "Yes" : "No"}
               />
-              <DetailItem
-                icon={<User className="w-4 h-4" />}
-                label="First Name"
-                value={participant.firstName}
-              />
-              <DetailItem
-                icon={<User className="w-4 h-4" />}
-                label="Last Name"
-                value={participant.lastName}
-              />
-              <DetailItem
-                icon={<User className="w-4 h-4" />}
-                label="Other Names"
-                value={participant.otherNames || "—"}
-              />
-              <DetailItem
-                icon={<User className="w-4 h-4" />}
-                label="Gender"
-                value={participant.gender || "—"}
-              />
-              <DetailItem
-                icon={<User className="w-4 h-4" />}
-                label="Marital Status"
-                value={participant.maritalStatus || "—"}
-              />
+              {participant.physicallyChallenged && participant.accessibilityNeeds && (
+                <DetailItem
+                  icon={<Accessibility className="w-4 h-4" />}
+                  label="Accessibility details"
+                  value={participant.accessibilityNeeds}
+                />
+              )}
             </div>
           </div>
 
-          {/* Contact Information */}
           <div>
             <h5 className="text-sm font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">
               <Phone className="w-4 h-4" />
               Contact Information
             </h5>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <DetailItem
-                icon={<Mail className="w-4 h-4" />}
-                label="Email"
-                value={participant.email || "—"}
-              />
+              <DetailItem icon={<Mail className="w-4 h-4" />} label="Email" value={participant.email || "—"} />
               <DetailItem
                 icon={<Phone className="w-4 h-4" />}
                 label="Phone Number"
-                value={participant.phoneNumber}
+                value={
+                  participant.phoneCountryCode
+                    ? `${participant.phoneCountryCode} ${participant.phoneNumber}`
+                    : participant.phoneNumber
+                }
+              />
+              <DetailItem
+                icon={<MapPin className="w-4 h-4" />}
+                label="Country"
+                value={participant.country || "—"}
               />
               <DetailItem
                 icon={<MapPin className="w-4 h-4" />}
@@ -567,18 +435,13 @@ function ViewDetailsModal({
             </div>
           </div>
 
-          {/* Registration Details */}
           <div>
             <h5 className="text-sm font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">
               <Calendar className="w-4 h-4" />
               Registration Details
             </h5>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <DetailItem
-                icon={<Hash className="w-4 h-4" />}
-                label="Category"
-                value={categoryDisplay}
-              />
+              <DetailItem icon={<Hash className="w-4 h-4" />} label="Category" value={categoryDisplay} />
               <DetailItem
                 icon={<Building className="w-4 h-4" />}
                 label="Organization"
@@ -589,16 +452,11 @@ function ViewDetailsModal({
                 label="Participation Type"
                 value={participant.participationType || "—"}
               />
-              <DetailItem
-                icon={<Hash className="w-4 h-4" />}
-                label="Unique ID"
-                value={participant.uniqueId || "—"}
-              />
+              <DetailItem icon={<Hash className="w-4 h-4" />} label="Unique ID" value={participant.uniqueId || "—"} />
             </div>
           </div>
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-3xl sticky bottom-0">
           <Button
             onClick={onClose}
@@ -611,32 +469,6 @@ function ViewDetailsModal({
     </div>
   );
 }
-
-function DetailItem({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-start gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-      <div className="text-gray-400 dark:text-gray-500 mt-0.5">{icon}</div>
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          {label}
-        </p>
-        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-          {value}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-
 
 // ─── Registration Modal ─────────────────────────────────────────────────────
 
@@ -659,7 +491,6 @@ function RegistrationModal({
   const [errors, setErrors] = useState<FormErrors>({});
   const [step, setStep] = useState(1);
 
-  // Reset form when modal opens with new data
   useEffect(() => {
     if (isOpen) {
       setFormData(initialData);
@@ -686,19 +517,25 @@ function RegistrationModal({
       if (!formData.firstName.trim()) newErrors.firstName = "First name is required.";
       if (!formData.lastName.trim()) newErrors.lastName = "Last name is required.";
       if (!formData.gender) newErrors.gender = "Please select a gender.";
-      if (!formData.maritalStatus) newErrors.maritalStatus = "Please select a marital status.";
+      if (!formData.physicallyChallenged)
+        newErrors.physicallyChallenged = "Please indicate accessibility support needs.";
     }
 
     if (n === 3) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email))
         newErrors.email = "Please enter a valid email address.";
-      if (formData.phoneNumber.trim().length < 8)
+      if (!formData.country) newErrors.country = "Please select a country.";
+      if (!formData.stateOfResidence.trim())
+        newErrors.stateOfResidence =
+          formData.country === "Nigeria"
+            ? "Please select a state of residence."
+            : "Please enter a state/region of residence.";
+      if (formData.phoneNumber.trim().length < 7)
         newErrors.phoneNumber = "Please enter a valid phone number.";
-      if (!formData.stateOfResidence) newErrors.stateOfResidence = "Please select your state.";
     }
 
     if (n === 4) {
-      if (!formData.photo) newErrors.photo = "Please upload a passport photo.";
+      if (!formData.photo && !formData.photoPreview) newErrors.photo = "Please upload a passport photo.";
     }
 
     setErrors(newErrors);
@@ -725,7 +562,6 @@ function RegistrationModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
       <div className="w-full max-w-2xl max-h-[92vh] overflow-hidden rounded-3xl bg-white dark:bg-gray-800 shadow-2xl border border-gray-100 dark:border-gray-700 flex flex-col animate-slideUp">
-        {/* Header */}
         <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-gray-800 dark:to-gray-800">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -733,12 +569,9 @@ function RegistrationModal({
                 {mode === "create" ? "New Registration" : "Edit Registration"}
               </h3>
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                {mode === "create"
-                  ? "Register a new participant for the conference"
-                  : "Update participant information"}
+                {mode === "create" ? "Register a new participant for the conference" : "Update participant information"}
               </p>
             </div>
-
             <button
               onClick={onClose}
               className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 shrink-0"
@@ -748,7 +581,6 @@ function RegistrationModal({
           </div>
         </div>
 
-        {/* Content */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
           {/* Step 1: Category */}
           {step === 1 && (
@@ -838,7 +670,9 @@ function RegistrationModal({
                   >
                     <option value="">—</option>
                     {TITLES.map((t) => (
-                      <option key={t} value={t}>{t}</option>
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
                     ))}
                   </select>
                   <FieldError message={errors.title} />
@@ -906,9 +740,7 @@ function RegistrationModal({
                             : "border-gray-300 dark:border-gray-500"
                         }`}
                       >
-                        {formData.gender === g && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-white block" />
-                        )}
+                        {formData.gender === g && <span className="w-1.5 h-1.5 rounded-full bg-white block" />}
                       </span>
                       {g}
                     </button>
@@ -919,36 +751,50 @@ function RegistrationModal({
 
               <div>
                 <label className="block mb-3 text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
-                  Marital Status <span className="text-red-500">*</span>
+                  Accessibility Support Needed <span className="text-red-500">*</span>
                 </label>
                 <div className="flex flex-wrap gap-3">
-                  {MARITAL_STATUSES.map((m) => (
+                  {YES_NO.map((option) => (
                     <button
-                      key={m}
+                      key={option}
                       type="button"
-                      onClick={() => update("maritalStatus", m)}
+                      onClick={() => update("physicallyChallenged", option as "Yes" | "No")}
                       className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-full border-2 text-sm font-semibold uppercase tracking-wide transition-all duration-200 ${
-                        formData.maritalStatus === m
+                        formData.physicallyChallenged === option
                           ? "border-green-600 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400"
                           : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-green-400"
                       }`}
                     >
                       <span
                         className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all ${
-                          formData.maritalStatus === m
+                          formData.physicallyChallenged === option
                             ? "border-green-600 bg-green-600"
                             : "border-gray-300 dark:border-gray-500"
                         }`}
                       >
-                        {formData.maritalStatus === m && (
+                        {formData.physicallyChallenged === option && (
                           <span className="w-1.5 h-1.5 rounded-full bg-white block" />
                         )}
                       </span>
-                      {m}
+                      {option}
                     </button>
                   ))}
                 </div>
-                <FieldError message={errors.maritalStatus} />
+                <FieldError message={errors.physicallyChallenged} />
+
+                {formData.physicallyChallenged === "Yes" && (
+                  <div className="mt-4">
+                    <label className="block mb-2 text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                      Accessibility Details <span className="text-gray-400 text-xs normal-case font-normal">(optional)</span>
+                    </label>
+                    <textarea
+                      className="w-full h-24 rounded-2xl border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-3 text-sm font-medium focus:border-green-500 focus:ring-green-500 transition-colors resize-none"
+                      placeholder="e.g. wheelchair access, sign language interpretation..."
+                      value={formData.accessibilityNeeds}
+                      onChange={(e) => update("accessibilityNeeds", e.target.value)}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -972,15 +818,83 @@ function RegistrationModal({
 
               <div>
                 <label className="block mb-2 text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                  Country <span className="text-red-500">*</span>
+                </label>
+                <select
+                  className="w-full h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 text-sm font-semibold focus:border-green-500 focus:ring-green-500 transition-colors"
+                  value={formData.country}
+                  onChange={(e) => {
+                    update("country", e.target.value);
+                    update("stateOfResidence", "");
+                  }}
+                >
+                  {COUNTRIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                <FieldError message={errors.country} />
+              </div>
+
+              {formData.country === "Nigeria" ? (
+                <div>
+                  <label className="block mb-2 text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                    State of Residence <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    className="w-full h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 text-sm font-semibold focus:border-green-500 focus:ring-green-500 transition-colors"
+                    value={formData.stateOfResidence}
+                    onChange={(e) => update("stateOfResidence", e.target.value)}
+                  >
+                    <option value="">Select state</option>
+                    {NIGERIAN_STATES.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                  <FieldError message={errors.stateOfResidence} />
+                </div>
+              ) : (
+                <div>
+                  <label className="block mb-2 text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                    State/Region of Residence <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    className="h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600"
+                    placeholder="e.g. Ontario, Bavaria..."
+                    value={formData.stateOfResidence}
+                    onChange={(e) => update("stateOfResidence", e.target.value)}
+                  />
+                  <FieldError message={errors.stateOfResidence} />
+                </div>
+              )}
+
+              <div>
+                <label className="block mb-2 text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
                   Phone Number <span className="text-red-500">*</span>
                 </label>
-                <Input
-                  type="tel"
-                  className="h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600"
-                  placeholder="e.g. 08031234567"
-                  value={formData.phoneNumber}
-                  onChange={(e) => update("phoneNumber", e.target.value)}
-                />
+                <div className="flex gap-2">
+                  <select
+                    className="h-12 w-32 shrink-0 rounded-2xl border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 text-sm font-semibold focus:border-green-500 focus:ring-green-500 transition-colors"
+                    value={formData.phoneCountryCode}
+                    onChange={(e) => update("phoneCountryCode", e.target.value)}
+                  >
+                    {PHONE_COUNTRY_CODES.map(({ country, dial }) => (
+                      <option key={country} value={dial}>
+                        {dial ? `${dial} ${country}` : country}
+                      </option>
+                    ))}
+                  </select>
+                  <Input
+                    type="tel"
+                    className="h-12 flex-1 rounded-2xl border-2 border-gray-200 dark:border-gray-600"
+                    placeholder="e.g. 8031234567 (no leading 0)"
+                    value={formData.phoneNumber}
+                    onChange={(e) => update("phoneNumber", e.target.value)}
+                  />
+                </div>
                 <FieldError message={errors.phoneNumber} />
               </div>
 
@@ -995,23 +909,6 @@ function RegistrationModal({
                   value={formData.organizationName}
                   onChange={(e) => update("organizationName", e.target.value)}
                 />
-              </div>
-
-              <div>
-                <label className="block mb-2 text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
-                  State of Residence <span className="text-red-500">*</span>
-                </label>
-                <select
-                  className="w-full h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 text-sm font-semibold focus:border-green-500 focus:ring-green-500 transition-colors"
-                  value={formData.stateOfResidence}
-                  onChange={(e) => update("stateOfResidence", e.target.value)}
-                >
-                  <option value="">Select state</option>
-                  {NIGERIAN_STATES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-                <FieldError message={errors.stateOfResidence} />
               </div>
             </div>
           )}
@@ -1041,13 +938,7 @@ function RegistrationModal({
           {/* Navigation */}
           <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-100 dark:border-gray-700">
             {step > 1 ? (
-              <Button
-                layout="outline"
-                className="rounded-2xl h-12 border-2"
-                onClick={goBack}
-                type="button"
-                disabled={submitting}
-              >
+              <Button layout="outline" className="rounded-2xl h-12 border-2" onClick={goBack} type="button" disabled={submitting}>
                 <span className="font-semibold">Back</span>
               </Button>
             ) : (
@@ -1069,16 +960,8 @@ function RegistrationModal({
                 disabled={submitting}
               >
                 <span className="inline-flex items-center gap-2 font-bold uppercase">
-                  {submitting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <UserPlus className="w-4 h-4" />
-                  )}
-                  {submitting
-                    ? "Submitting..."
-                    : mode === "create"
-                    ? "Register"
-                    : "Update"}
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                  {submitting ? "Submitting..." : mode === "create" ? "Register" : "Update"}
                 </span>
               </Button>
             )}
@@ -1101,32 +984,26 @@ export default function RegistrationManagementPage() {
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [viewingParticipant, setViewingParticipant] = useState<Participant | null>(null);
-const [resendingPass, setResendingPass] = useState<number | null>(null);
-  // ── Fetch participants ────────────────────────────────────────────────────
-
+  const [resendingPass, setResendingPass] = useState<number | null>(null);
 
   async function handleResendPass(participant: Participant) {
-  try {
-    setResendingPass(participant.attendeeId);
-    const { data } = await api.post<ApiSuccess<null>>(
-      `/conference/participants/${participant.attendeeId}/resend-pass`
-    );
-    toast.success(data.message || "Pass resent successfully!");
-  } catch (err: any) {
-    toast.error(
-      err?.response?.data?.message || "Failed to resend pass. Please try again."
-    );
-  } finally {
-    setResendingPass(null);
+    try {
+      setResendingPass(participant.attendeeId);
+      const { data } = await api.post<ApiSuccess<null>>(
+        `/conference/participants/${participant.attendeeId}/resend-pass`
+      );
+      toast.success(data.message || "Pass resent successfully!");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Failed to resend pass. Please try again.");
+    } finally {
+      setResendingPass(null);
+    }
   }
-}
 
   async function fetchParticipants() {
     try {
       setLoading(true);
-      const response = await api.get<ApiSuccess<Participant[]>>(
-        "/conference/participants"
-      );
+      const response = await api.get<ApiSuccess<Participant[]>>("/conference/participants");
       setParticipants(response.data.data || []);
     } catch (error) {
       console.error("Error fetching participants:", error);
@@ -1141,18 +1018,17 @@ const [resendingPass, setResendingPass] = useState<number | null>(null);
     fetchParticipants();
   }, []);
 
-  // ── Search and pagination ───────────────────────────────────────────────
-
   const filteredParticipants = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     if (!query) return participants;
 
-    return participants.filter((p) =>
-      p.fullName.toLowerCase().includes(query) ||
-      p.phoneNumber.includes(query) ||
-      p.uniqueId?.toLowerCase().includes(query) ||
-      p.category.toLowerCase().includes(query) ||
-      getCategoryDisplayName(p.category).toLowerCase().includes(query)
+    return participants.filter(
+      (p) =>
+        p.fullName.toLowerCase().includes(query) ||
+        p.phoneNumber.includes(query) ||
+        p.uniqueId?.toLowerCase().includes(query) ||
+        p.category.toLowerCase().includes(query) ||
+        getCategoryDisplayName(p.category).toLowerCase().includes(query)
     );
   }, [participants, searchQuery]);
 
@@ -1169,43 +1045,38 @@ const [resendingPass, setResendingPass] = useState<number | null>(null);
     }
   }, [currentPage, totalPages]);
 
-  // ── CRUD Operations ─────────────────────────────────────────────────────
+  function buildPayload(formData: FormData): globalThis.FormData {
+    const payload = new FormData();
+    payload.append("category", getCategoryBackendValue(formData.category));
+    payload.append("participationType", formData.participationType);
+    payload.append("title", formData.title);
+    payload.append("firstName", formData.firstName.trim());
+    payload.append("lastName", formData.lastName.trim());
+    payload.append("otherNames", formData.otherNames.trim() || "");
+    payload.append("email", formData.email.trim());
+    payload.append("country", formData.country);
+    payload.append("stateOfResidence", formData.stateOfResidence.trim());
+    payload.append("phoneCountryCode", formData.phoneCountryCode);
+    payload.append("phoneNumber", formData.phoneNumber.trim());
+    payload.append("organizationName", formData.organizationName.trim() || "");
+    payload.append("gender", formData.gender);
+    payload.append("physicallyChallenged", formData.physicallyChallenged === "Yes" ? "1" : "0");
+    payload.append("accessibilityNeeds", formData.accessibilityNeeds.trim() || "");
+    if (formData.photo) {
+      payload.append("photo", formData.photo);
+    }
+    return payload;
+  }
 
   async function handleCreate(formData: FormData) {
     try {
       setSubmitting(true);
-
-      const categoryBackendValue = getCategoryBackendValue(formData.category);
-
-      
-      const payload = new FormData();
+      const payload = buildPayload(formData);
       payload.append("_method", "PUT");
-      payload.append("category", categoryBackendValue);
-      payload.append("participationType", formData.participationType);
-      payload.append("title", formData.title);
-      payload.append("firstName", formData.firstName.trim());
-      payload.append("lastName", formData.lastName.trim());
-      payload.append("otherNames", formData.otherNames.trim() || "");
-      payload.append("email", formData.email.trim());
-      payload.append("phoneNumber", formData.phoneNumber.trim());
-      payload.append("organizationName", formData.organizationName.trim() || "");
-      payload.append("stateOfResidence", formData.stateOfResidence);
-      payload.append("gender", formData.gender);
-      payload.append("maritalStatus", formData.maritalStatus);
-      
-      if (formData.photo) {
-        payload.append("photo", formData.photo);
-      }
 
-      const { data } = await api.post<ApiSuccess<RegistrationResponse>>(
-        "/conference/register",
-        payload,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
+      const { data } = await api.post<ApiSuccess<RegistrationResponse>>("/conference/register", payload, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
 
       toast.success(data.message || "Registration successful!");
       await fetchParticipants();
@@ -1213,14 +1084,10 @@ const [resendingPass, setResendingPass] = useState<number | null>(null);
     } catch (err: any) {
       const validationErrors = err?.response?.data?.errors;
       let message = err?.response?.data?.message || "Registration failed. Please try again.";
-
       if (validationErrors && typeof validationErrors === "object") {
         const firstKey = Object.keys(validationErrors)[0];
-        if (firstKey && validationErrors[firstKey]?.[0]) {
-          message = validationErrors[firstKey][0];
-        }
+        if (firstKey && validationErrors[firstKey]?.[0]) message = validationErrors[firstKey][0];
       }
-
       toast.error(message);
       throw err;
     } finally {
@@ -1230,38 +1097,14 @@ const [resendingPass, setResendingPass] = useState<number | null>(null);
 
   async function handleUpdate(formData: FormData) {
     if (!editingParticipant) return;
-
     try {
       setSubmitting(true);
-
-      const categoryBackendValue = getCategoryBackendValue(formData.category);
-
-      const payload = new FormData();
-      payload.append("category", categoryBackendValue);
-      payload.append("participationType", formData.participationType);
-      payload.append("title", formData.title);
-      payload.append("firstName", formData.firstName.trim());
-      payload.append("lastName", formData.lastName.trim());
-      payload.append("otherNames", formData.otherNames.trim() || "");
-      payload.append("email", formData.email.trim());
-      payload.append("phoneNumber", formData.phoneNumber.trim());
-      payload.append("organizationName", formData.organizationName.trim() || "");
-      payload.append("stateOfResidence", formData.stateOfResidence);
-      payload.append("gender", formData.gender);
-      payload.append("maritalStatus", formData.maritalStatus);
-      
-      if (formData.photo) {
-        payload.append("photo", formData.photo);
-      }
+      const payload = buildPayload(formData);
 
       const { data } = await api.post<ApiSuccess<RegistrationResponse>>(
         `/conference/participants/${editingParticipant.attendeeId}`,
         payload,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
+        { headers: { "Content-Type": "multipart/form-data" } }
       );
 
       toast.success(data.message || "Participant updated successfully!");
@@ -1271,14 +1114,10 @@ const [resendingPass, setResendingPass] = useState<number | null>(null);
     } catch (err: any) {
       const validationErrors = err?.response?.data?.errors;
       let message = err?.response?.data?.message || "Update failed. Please try again.";
-
       if (validationErrors && typeof validationErrors === "object") {
         const firstKey = Object.keys(validationErrors)[0];
-        if (firstKey && validationErrors[firstKey]?.[0]) {
-          message = validationErrors[firstKey][0];
-        }
+        if (firstKey && validationErrors[firstKey]?.[0]) message = validationErrors[firstKey][0];
       }
-
       toast.error(message);
       throw err;
     } finally {
@@ -1302,63 +1141,33 @@ const [resendingPass, setResendingPass] = useState<number | null>(null);
     setIsModalOpen(true);
   }
 
-function getFormDataFromParticipant(participant: Participant): FormData {
-  const categoryDisplayName = getCategoryDisplayName(participant.category);
+  function getFormDataFromParticipant(participant: Participant): FormData {
+    const categoryDisplayName = getCategoryDisplayName(participant.category);
 
-  return {
-    category: categoryDisplayName,
-    participationType: participant.participationType || "",
-    title: participant.title || "",
-    firstName: participant.firstName,
-    lastName: participant.lastName,
-    otherNames: participant.otherNames || "",
-    email: participant.email || "",
-    phoneNumber: participant.phoneNumber,
-    organizationName: participant.organizationName || "",
-    stateOfResidence: participant.stateOfResidence || "",
-    gender: participant.gender,
-    maritalStatus: participant.maritalStatus || "",
-    photo: null,
-    photoPreview: participant.photo || null,
-  };
-}
+    return {
+      category: categoryDisplayName,
+      participationType: participant.participationType || "",
+      title: participant.title || "",
+      firstName: participant.firstName,
+      lastName: participant.lastName,
+      otherNames: participant.otherNames || "",
+      email: participant.email || "",
+      country: participant.country || "Nigeria",
+      stateOfResidence: participant.stateOfResidence || "",
+      phoneCountryCode: participant.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+      phoneNumber: participant.phoneNumber,
+      organizationName: participant.organizationName || "",
+      gender: participant.gender,
+      physicallyChallenged: participant.physicallyChallenged ? "Yes" : "No",
+      accessibilityNeeds: participant.accessibilityNeeds || "",
+      photo: null,
+      photoPreview: participant.photo || null,
+    };
+  }
 
   function openViewModal(participant: Participant) {
     setViewingParticipant(participant);
   }
-
-  function PassportAvatar({
-  name,
-  photoUrl,
-  size = "md",
-}: {
-  name: string;
-  photoUrl?: string;
-  size?: "sm" | "md" | "lg";
-}) {
-  const sizeClass =
-    size === "sm"
-      ? "h-10 w-10 rounded-xl"
-      : size === "lg"
-        ? "h-16 w-16 rounded-2xl"
-        : "h-12 w-12 rounded-2xl";
-
-  return photoUrl ? (
-    <img
-      src={photoUrl || "/default-avatar.png"}
-      alt={name}
-      className={`${sizeClass} object-cover border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900 shrink-0`}
-    />
-  ) : (
-    <div
-      className={`${sizeClass} flex items-center justify-center border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900 text-gray-400 shrink-0`}
-    >
-      <Users className="w-5 h-5" />
-    </div>
-  );
-}
-
-  // ── Render ──────────────────────────────────────────────────────────────
 
   return (
     <Layout>
@@ -1371,7 +1180,6 @@ function getFormDataFromParticipant(participant: Participant): FormData {
             opacity: 1;
           }
         }
-
         @keyframes slideUp {
           from {
             transform: translateY(100%) scale(0.95);
@@ -1380,11 +1188,9 @@ function getFormDataFromParticipant(participant: Participant): FormData {
             transform: translateY(0) scale(1);
           }
         }
-
         .animate-fadeIn {
           animation: fadeIn 0.2s ease-out;
         }
-
         .animate-slideUp {
           animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
@@ -1414,7 +1220,7 @@ function getFormDataFromParticipant(participant: Participant): FormData {
         </div>
       </div>
 
-      {/* Search and Filters */}
+      {/* Search */}
       <div className="rounded-3xl bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 shadow-xl p-6 mb-8">
         <div className="relative">
           <Input
@@ -1439,7 +1245,9 @@ function getFormDataFromParticipant(participant: Participant): FormData {
           )}
         </div>
         <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-          {loading ? "Loading..." : `${filteredParticipants.length} participant${filteredParticipants.length === 1 ? "" : "s"}`}
+          {loading
+            ? "Loading..."
+            : `${filteredParticipants.length} participant${filteredParticipants.length === 1 ? "" : "s"}`}
         </div>
       </div>
 
@@ -1497,48 +1305,39 @@ function getFormDataFromParticipant(participant: Participant): FormData {
                         {(currentPage - 1) * ITEMS_PER_PAGE + index + 1}
                       </td>
                       <td className="py-4 px-4">
-                        {/* {participant.photo ? (
+                        {participant.photoUrl ? (
+                          <img
+                            src={`${process.env.NEXT_PUBLIC_API_FILE_URL}${participant.photoUrl}`}
+                            alt={participant.fullName}
+                            className="lg:w-16 lg:h-16 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
+                          />
+                        ) : participant.photo ? (
                           <img
                             src={participant.photo}
                             alt={participant.fullName}
-                            className="w-10 h-10 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
+                            className="lg:w-12 lg:h-12 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
                           />
                         ) : (
                           <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center border-2 border-gray-200 dark:border-gray-600">
                             <User className="w-5 h-5 text-gray-400" />
                           </div>
-                        )} */}
-                        
-{participant.photoUrl ? (
-  <img
-    src={`${process.env.NEXT_PUBLIC_API_FILE_URL}${participant.photoUrl}`}
-    alt={participant.fullName}
-    className="lg:w-16 lg:h-16 sm:w-12 sm:h-12  rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
-  />
-) : participant.photo ? (
-  <img
-    src={participant.photo}
-    alt={participant.fullName}
-    className="lg:w-12 lg:h-12 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
-  />
-) : (
-  <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center border-2 border-gray-200 dark:border-gray-600">
-    <User className="w-5 h-5 text-gray-400" />
-  </div>
-)}
+                        )}
                       </td>
                       <td className="py-4 px-4 font-mono text-xs font-bold uppercase">
                         {participant.uniqueId || "—"}
                       </td>
                       <td className="py-4 px-4 font-bold uppercase whitespace-nowrap">
                         {participant.title} {participant.fullName}
+                        {participant.physicallyChallenged && (
+                          <Accessibility className="w-3.5 h-3.5 inline-block ml-1.5 text-amber-500" />
+                        )}
                       </td>
                       <td className="py-4 px-4 text-sm">
-                        {participant.phoneNumber}
+                        {participant.phoneCountryCode
+                          ? `${participant.phoneCountryCode} ${participant.phoneNumber}`
+                          : participant.phoneNumber}
                       </td>
-                      <td className="py-4 px-4 text-sm uppercase">
-                        {participant.gender || "—"}
-                      </td>
+                      <td className="py-4 px-4 text-sm uppercase">{participant.gender || "—"}</td>
                       <td className="py-4 px-4 text-xs font-semibold uppercase max-w-[120px] truncate">
                         {categoryDisplay}
                       </td>
@@ -1547,43 +1346,42 @@ function getFormDataFromParticipant(participant: Participant): FormData {
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center justify-end gap-2">
-  <button
-    onClick={() => openViewModal(participant)}
-    className="p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
-    title="View Details"
-  >
-    <Eye className="w-4 h-4" />
-  </button>
+                          <button
+                            onClick={() => openViewModal(participant)}
+                            className="p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
 
-  {/* ── Resend Pass ── */}
-  <button
-    onClick={() => handleResendPass(participant)}
-    disabled={resendingPass === participant.attendeeId || !participant.email}
-    className="p-2 rounded-xl text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-    title={participant.email ? "Resend Pass" : "No email on record"}
-  >
-    {resendingPass === participant.attendeeId ? (
-      <Loader2 className="w-4 h-4 animate-spin" />
-    ) : (
-      <Send className="w-4 h-4" />
-    )}
-  </button>
+                          <button
+                            onClick={() => handleResendPass(participant)}
+                            disabled={resendingPass === participant.attendeeId || !participant.email}
+                            className="p-2 rounded-xl text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={participant.email ? "Resend Pass" : "No email on record"}
+                          >
+                            {resendingPass === participant.attendeeId ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Send className="w-4 h-4" />
+                            )}
+                          </button>
 
-  <button
-    onClick={() => openEditModal(participant)}
-    className="p-2 rounded-xl text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-    title="Edit"
-  >
-    <Edit className="w-4 h-4" />
-  </button>
-  <button
-    onClick={() => setDeleteConfirm(participant.attendeeId)}
-    className="p-2 rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-    title="Delete"
-  >
-    <Trash2 className="w-4 h-4" />
-  </button>
-</div>
+                          <button
+                            onClick={() => openEditModal(participant)}
+                            className="p-2 rounded-xl text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                            title="Edit"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirm(participant.attendeeId)}
+                            className="p-2 rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1614,11 +1412,7 @@ function getFormDataFromParticipant(participant: Participant): FormData {
               Are you sure you want to delete this participant? This action cannot be undone.
             </p>
             <div className="flex gap-3 mt-6">
-              <Button
-                layout="outline"
-                className="rounded-2xl h-12 flex-1 border-2"
-                onClick={() => setDeleteConfirm(null)}
-              >
+              <Button layout="outline" className="rounded-2xl h-12 flex-1 border-2" onClick={() => setDeleteConfirm(null)}>
                 Cancel
               </Button>
               <Button
@@ -1632,14 +1426,8 @@ function getFormDataFromParticipant(participant: Participant): FormData {
         </div>
       )}
 
-      {/* View Details Modal */}
-      <ViewDetailsModal
-        isOpen={!!viewingParticipant}
-        onClose={() => setViewingParticipant(null)}
-        participant={viewingParticipant}
-      />
+      <ViewDetailsModal isOpen={!!viewingParticipant} onClose={() => setViewingParticipant(null)} participant={viewingParticipant} />
 
-      {/* Registration Modal */}
       <RegistrationModal
         isOpen={isModalOpen}
         onClose={() => {
