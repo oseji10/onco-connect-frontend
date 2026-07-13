@@ -433,6 +433,8 @@ function ViewAbstractModal({
                     </span>
                   )}
                   <p className="text-xs text-gray-500">{a.affiliation}</p>
+                  <p className="text-xs text-gray-500">{a.email}</p>
+                  <p className="text-xs text-gray-500">{a.phone}</p>
                 </div>
               ))}
             </div>

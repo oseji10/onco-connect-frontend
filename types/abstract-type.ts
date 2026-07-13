@@ -5,7 +5,7 @@
 export const SUB_THEMES = [
   {
     value: "policy-leadership-governance",
-    label: "Sub-theme 1: Policy, Leadership, and Governance for Equitable Cancer Control",
+    label: "Sub-theme 1: Policy, Leadership, Commitment and Governance for Equitable Cancer Control",
   },
   {
     value: "research-innovation-data",
@@ -48,6 +48,8 @@ export type Author = {
   affiliation: string;
   email: string;
   isCorresponding: boolean;
+  phone: string;
+
 };
 
 export type Abstract = {

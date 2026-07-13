@@ -45,6 +45,7 @@ function newAuthor(isCorresponding = false): Author {
     affiliation: "",
     email: "",
     isCorresponding,
+    phone: "",
   };
 }
 
@@ -123,10 +124,14 @@ export default function SubmitAbstractPage() {
       newErrors.authors = "Every author needs a name and affiliation.";
     }
     const correspondingAuthor = form.authors.find((a) => a.isCorresponding);
-    if (correspondingAuthor && !correspondingAuthor.email.trim()) {
-      newErrors.authors =
-        "The corresponding author needs an email address so we can reach them.";
-    }
+if (correspondingAuthor && !correspondingAuthor.email.trim()) {
+  newErrors.authors =
+    "The corresponding author needs an email address so we can reach them.";
+}
+if (correspondingAuthor && !correspondingAuthor.phone.trim()) {
+  newErrors.authors =
+    "The corresponding author needs a phone number so we can reach them.";
+}
     if (!form.declarationChecked) {
       newErrors.declarationChecked =
         "Please confirm the declaration before submitting.";
@@ -197,15 +202,14 @@ export default function SubmitAbstractPage() {
       {/* Header banner */}
       <div className="bg-indigo-700 text-white">
         <div className="max-w-3xl mx-auto px-6 py-10">
-          <p className="text-xs font-bold uppercase tracking-widest text-indigo-300 mb-2">
+          <p className="text-xxl font-bold uppercase tracking-widest text-indigo-300 mb-2">
             2026 International Cancer Week &middot; 5&ndash;9 October 2026
           </p>
           <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">
             Submit Your Abstract
           </h1>
           <p className="mt-3 text-indigo-100 max-w-2xl">
-            United Against Cancer: Building Resilient and Equitable Systems for
-            Prevention, Care, and Survivorship.
+            Theme: United Against Cancer: Building Resilient, Innovative and Equitable Systems Across the Cancer Care Continuum.
           </p>
         </div>
       </div>
@@ -396,26 +400,35 @@ export default function SubmitAbstractPage() {
                 </div>
 
                 <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-3">
-                  <input
-                    className="h-11 rounded-xl border-2 border-gray-200 px-3.5 text-sm font-medium focus:border-indigo-600 focus:ring-indigo-600 outline-none flex-1"
-                    placeholder="Email"
-                    type="email"
-                    value={author.email}
-                    onChange={(e) =>
-                      updateAuthor(author.id, { email: e.target.value })
-                    }
-                  />
-                  <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 shrink-0">
-                    <input
-                      type="radio"
-                      name="corresponding"
-                      checked={author.isCorresponding}
-                      onChange={() => setCorresponding(author.id)}
-                      className="accent-indigo-700"
-                    />
-                    Corresponding author
-                  </label>
-                </div>
+  <input
+    className="h-11 rounded-xl border-2 border-gray-200 px-3.5 text-sm font-medium focus:border-indigo-600 focus:ring-indigo-600 outline-none flex-1"
+    placeholder="Email"
+    type="email"
+    value={author.email}
+    onChange={(e) =>
+      updateAuthor(author.id, { email: e.target.value })
+    }
+  />
+  <input
+    className="h-11 rounded-xl border-2 border-gray-200 px-3.5 text-sm font-medium focus:border-indigo-600 focus:ring-indigo-600 outline-none flex-1"
+    placeholder="Phone number"
+    type="tel"
+    value={author.phone}
+    onChange={(e) =>
+      updateAuthor(author.id, { phone: e.target.value })
+    }
+  />
+  <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 shrink-0">
+    <input
+      type="radio"
+      name="corresponding"
+      checked={author.isCorresponding}
+      onChange={() => setCorresponding(author.id)}
+      className="accent-indigo-700"
+    />
+    Corresponding author
+  </label>
+</div>
               </div>
             ))}
           </div>
@@ -451,7 +464,7 @@ export default function SubmitAbstractPage() {
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || !form.declarationChecked}
           className="w-full h-14 rounded-2xl bg-indigo-700 text-white font-bold uppercase tracking-wide shadow-lg shadow-indigo-900/25 hover:from-indigo-900 hover:to-black transition-all disabled:opacity-60 inline-flex items-center justify-center gap-2"
         >
           {submitting ? (
@@ -462,6 +475,12 @@ export default function SubmitAbstractPage() {
           {submitting ? "Submitting..." : "Submit Abstract"}
         </button>
       </form>
+      <div className="mt-8 text-center text-sm text-gray-400 dark:text-gray-500 pb-10">
+        <p>
+          © 2026 National Institute for Cancer Research & Treatment (NICRAT). All rights reserved.{" "}
+          <b>Powered by Resilience Nigeria - The Official Technology Partner of The 2026 International Cancer Week</b>
+        </p>
+      </div>
     </div>
   );
 }
