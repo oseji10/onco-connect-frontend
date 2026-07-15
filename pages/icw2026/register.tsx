@@ -494,7 +494,7 @@ export default function RegistrationPage() {
             </div>
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
-                2026 International Cancer Week
+                International Cancer Week 2026
               </h1>
               <p className="text-sm text-teal-600 dark:text-teal-400 font-medium">
                 Registration Portal
@@ -985,7 +985,7 @@ export default function RegistrationPage() {
         <div className="mt-8 text-center text-sm text-gray-400 dark:text-gray-500">
           <p>
             © 2026 National Institute for Cancer Research & Treatment (NICRAT). All rights reserved.{" "}
-            <b>Powered by Resilience Nigeria - The Official Technology Partner of The 2026 International Cancer Week</b>
+            <b>Powered by Resilience Nigeria - The Official Technology Partner of The International Cancer Week 2026</b>
           </p>
         </div>
       </div>

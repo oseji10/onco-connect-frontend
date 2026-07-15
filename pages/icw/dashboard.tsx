@@ -9,13 +9,12 @@ import {
   Users,
   UserCheck,
   UserX,
+  UserPlus,
+  XCircle,
   AlertTriangle,
   ClipboardList,
   Building2,
   CheckCircle2,
-  KeyRound,
-  FileSignature,
-  ShieldAlert,
   FileText,
   Presentation,
   Mic,
@@ -42,11 +41,6 @@ type IncidentRow = {
   count: number;
 };
 
-type RoomMetric = {
-  metric: string;
-  value: string | number;
-};
-
 type DashboardOverviewStat = {
   title: string;
   value: string;
@@ -65,7 +59,6 @@ type DashboardPayload = {
   overviewStats: DashboardOverviewStat[];
   supervisorRows: SupervisorRow[];
   incidentSnapshot: IncidentRow[];
-  roomMetrics: RoomMetric[];
   coordinatorNotes: string[];
 };
 
@@ -79,7 +72,6 @@ type ApiResponse = {
   overviewStats?: DashboardOverviewStat[];
   supervisorRows?: SupervisorRow[];
   incidentSnapshot?: IncidentRow[];
-  roomMetrics?: RoomMetric[];
   coordinatorNotes?: string[];
 };
 
@@ -98,20 +90,16 @@ function getStat(stats: DashboardOverviewStat[], title: string): number {
   return Number(raw.replace(/[^0-9.]/g, "")) || 0;
 }
 
-function getRoomMetricIcon(metric: string) {
-  const n = metric.toLowerCase();
-  if (n.includes("assign"))
-    return <Users className="w-5 h-5 text-emerald-700 dark:text-emerald-100" />;
-  if (n.includes("check"))
-    return <CheckCircle2 className="w-5 h-5 text-emerald-700 dark:text-emerald-100" />;
-  if (n.includes("ack"))
-    return <FileSignature className="w-5 h-5 text-blue-700 dark:text-blue-100" />;
-  if (n.includes("key"))
-    return <KeyRound className="w-5 h-5 text-violet-700 dark:text-violet-100" />;
-  if (n.includes("issue") || n.includes("flag"))
-    return <ShieldAlert className="w-5 h-5 text-amber-700 dark:text-amber-100" />;
-  return <Building2 className="w-5 h-5 text-slate-700 dark:text-slate-100" />;
-}
+// Titles that are still sent by the backend (needed for the gender bar
+// chart, or rendered as their own explicit card below) but should NOT
+// also render as a standalone card via the generic secondary-stats loop.
+const HIDDEN_FROM_SECONDARY_GRID = new Set([
+  "Accredited Male",
+  "Accredited Female",
+  "Males Present",
+  "Females Present",
+  "Registered Participants", // rendered as its own explicit card instead
+]);
 
 // Accent colour map for the secondary overview stat cards
 const ACCENT_MAP: Record<string, string> = {
@@ -121,13 +109,15 @@ const ACCENT_MAP: Record<string, string> = {
   "Females Present": "#f472b6",
   "Attendance %": "#059669",
   "Incidents for Date": "#f59e0b",
-  // "Rooms Checked for Date": "#8b5cf6",
   "Meals (Unique)": "#14b8a6",
   // Abstract submission metrics
   "Abstracts Submitted": "#8b5cf6",
   "Abstracts Accepted": "#22c55e",
+  "Abstracts Rejected": "#ef4444",
   "Poster Presentations": "#06b6d4",
   "Oral Presentations": "#f97316",
+  // Registration
+  "Registered Participants": "#0d9488",
 };
 
 // Distinct icons for specific secondary stats (falls back to a plain
@@ -136,8 +126,10 @@ function getSecondaryStatIcon(title: string, accentColor: string): React.ReactNo
   const icons: Record<string, React.ReactNode> = {
     "Abstracts Submitted": <FileText className="w-5 h-5" style={{ color: accentColor }} />,
     "Abstracts Accepted": <CheckCircle2 className="w-5 h-5" style={{ color: accentColor }} />,
+    "Abstracts Rejected": <XCircle className="w-5 h-5" style={{ color: accentColor }} />,
     "Poster Presentations": <Presentation className="w-5 h-5" style={{ color: accentColor }} />,
     "Oral Presentations": <Mic className="w-5 h-5" style={{ color: accentColor }} />,
+    "Registered Participants": <UserPlus className="w-5 h-5" style={{ color: accentColor }} />,
   };
   return icons[title] ?? <span className="w-2.5 h-2.5 rounded-full" style={{ background: accentColor }} />;
 }
@@ -306,7 +298,6 @@ export default function Dashboard() {
 
   const donutRef = useRef<HTMLCanvasElement>(null);
   const genderRef = useRef<HTMLCanvasElement>(null);
-  const opsRef = useRef<HTMLCanvasElement>(null);
   const trendRef = useRef<HTMLCanvasElement>(null);
   const supBarRef = useRef<HTMLCanvasElement>(null);
 
@@ -323,7 +314,6 @@ export default function Dashboard() {
       overviewStats: Array.isArray(payload?.overviewStats) ? payload.overviewStats : [],
       supervisorRows: Array.isArray(payload?.supervisorRows) ? payload.supervisorRows : [],
       incidentSnapshot: Array.isArray(payload?.incidentSnapshot) ? payload.incidentSnapshot : [],
-      roomMetrics: Array.isArray(payload?.roomMetrics) ? payload.roomMetrics : [],
       coordinatorNotes: Array.isArray(payload?.coordinatorNotes) ? payload.coordinatorNotes : [],
     };
   };
@@ -369,7 +359,6 @@ export default function Dashboard() {
   const stats          = dashboardData?.overviewStats  ?? [];
   const supervisorRows = dashboardData?.supervisorRows ?? [];
   const incidentSnapshot = dashboardData?.incidentSnapshot ?? [];
-  const roomMetrics    = dashboardData?.roomMetrics    ?? [];
   const coordinatorNotes = dashboardData?.coordinatorNotes ?? [];
 
   const dashboardDate = dashboardData?.dashboardDate ?? "--";
@@ -381,16 +370,19 @@ export default function Dashboard() {
   const present       = getStat(stats, "Total Present for Selected Date");
   const absent        = getStat(stats, "Total Absent for Selected Date");
   const total         = getStat(stats, "Total Accredited Participants");
+  const registered    = getStat(stats, "Registered Participants");
   const accMale       = getStat(stats, "Accredited Male");
   const accFemale     = getStat(stats, "Accredited Female");
   const malePresent   = getStat(stats, "Males Present");
   const femalePresent = getStat(stats, "Females Present");
   const openIncidents = getStat(stats, "Open Incidents");
-  const meals         = getStat(stats, "Meals (Unique)");
+  const abstractsRejected = getStat(stats, "Abstracts Rejected");
   const attendancePct = total > 0 ? Math.round((present / total) * 100) + "%" : "0%";
 
-  const roomsAssigned = roomMetrics.find((r) => r.metric.toLowerCase().includes("assign"))?.value ?? 0;
-  const roomsChecked  = roomMetrics.find((r) => r.metric.toLowerCase().includes("check"))?.value  ?? 0;
+  // Merged gender totals — shown as a single figure on their cards; the
+  // male/female split is only revealed in the detail drill-down view.
+  const accreditedTotalByGender = accMale + accFemale;
+  const presentTotalByGender    = malePresent + femalePresent;
 
   const isDark      = typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
   const gridColor   = isDark ? "rgba(255,255,255,.06)" : "rgba(0,0,0,.06)";
@@ -402,20 +394,6 @@ export default function Dashboard() {
     const params = new URLSearchParams({
       type: "overview",
       title: item.title,
-      date: selectedDate,
-      dashboardDate,
-      dayName,
-      programme,
-      venue,
-      period,
-    });
-    router.push(`/icw/dashboard-detail?${params.toString()}`);
-  }
-
-  function goToRoomMetricDetail(item: RoomMetric) {
-    const params = new URLSearchParams({
-      type: "room-metric",
-      metric: item.metric,
       date: selectedDate,
       dashboardDate,
       dayName,
@@ -463,22 +441,6 @@ export default function Dashboard() {
       },
     },
   }, [accMale, accFemale, malePresent, femalePresent, chartReady]);
-
-  useChart(opsRef, {
-    type: "bar",
-    data: {
-      labels: ["Meals served", "Rooms checked", "Rooms assigned"],
-      datasets: [{ data: [meals, Number(roomsChecked), Number(roomsAssigned)], backgroundColor: ["#0ea5e9", "#f59e0b", "#a78bfa"], borderRadius: 4, barPercentage: 0.55 }],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks: { color: tickColor, font: { size: 10 } }, grid: { display: false } },
-        y: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor }, border: { display: false } },
-      },
-    },
-  }, [meals, roomsChecked, roomsAssigned, chartReady]);
 
   useChart(trendRef, {
     type: "line",
@@ -627,35 +589,77 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Secondary overviewStats grid — remaining stats, all clickable.
-          Abstract submission/acceptance/presentation-type counts (added by
-          the backend to overviewStats) render here automatically, picking
-          up their accent colour and icon from ACCENT_MAP / getSecondaryStatIcon
-          above — no structural change needed when the backend starts
-          sending them. */}
-      {stats.filter((s) => !TOP_KPI_TITLES.has(s.title)).length > 0 && (
-        <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
-          {stats
-            .filter((s) => !TOP_KPI_TITLES.has(s.title))
-            .map((item) => {
-              const accent = ACCENT_MAP[item.title] ?? "#6b7280";
-              return (
-                <KpiCard
-                  key={item.title}
-                  label={item.title}
-                  value={item.value}
-                  note={item.note}
-                  accentColor={accent}
-                  icon={getSecondaryStatIcon(item.title, accent)}
-                  onClick={() => goToOverviewDetail(item)}
-                />
-              );
-            })}
-        </div>
-      )}
+      {/* Secondary overviewStats grid.
+          - "Accredited by Gender" and "Present by Gender" are merged cards
+            showing a single total figure (built from the raw male/female
+            stats, which the backend still sends since they also feed the
+            gender bar chart below). Tap either to see the full male/female
+            breakdown in the detail view.
+          - "Registered Participants" is rendered explicitly here (rather
+            than through the generic loop below) so it always shows even if
+            the backend key name ever drifts slightly.
+          - Any other overviewStats entries (e.g. "Abstracts Rejected")
+            render automatically through the generic loop, picking up their
+            accent colour / icon from ACCENT_MAP / getSecondaryStatIcon, or
+            a neutral fallback if not registered there. */}
+      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+        <KpiCard
+          label="Accredited Participants"
+          value={accreditedTotalByGender}
+          note="Tap to view gender breakdown"
+          accentColor="#6366f1"
+          icon={<Users className="w-5 h-5 text-indigo-500" />}
+          onClick={() =>
+            goToOverviewDetail({
+              title: "Accredited by Gender",
+              value: String(accreditedTotalByGender),
+            })
+          }
+        />
+        <KpiCard
+          label="Present Today"
+          value={presentTotalByGender}
+          note="Selected date · tap for gender breakdown"
+          accentColor="#0ea5e9"
+          icon={<UserCheck className="w-5 h-5 text-sky-500" />}
+          onClick={() =>
+            goToOverviewDetail({
+              title: "Present by Gender",
+              value: String(presentTotalByGender),
+            })
+          }
+        />
+        <KpiCard
+          label="Registered Participants"
+          value={registered}
+          note="All registrations · tap for full list"
+          accentColor="#0d9488"
+          icon={<UserPlus className="w-5 h-5 text-teal-600" />}
+          onClick={() =>
+            goToOverviewDetail(statOrFallback("Registered Participants", registered))
+          }
+        />
 
-      {/* Three chart row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        {stats
+          .filter((s) => !TOP_KPI_TITLES.has(s.title) && !HIDDEN_FROM_SECONDARY_GRID.has(s.title))
+          .map((item) => {
+            const accent = ACCENT_MAP[item.title] ?? "#6b7280";
+            return (
+              <KpiCard
+                key={item.title}
+                label={item.title}
+                value={item.value}
+                note={item.note}
+                accentColor={accent}
+                icon={getSecondaryStatIcon(item.title, accent)}
+                onClick={() => goToOverviewDetail(item)}
+              />
+            );
+          })}
+      </div>
+
+      {/* Two chart row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         {/* Attendance donut */}
         <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm p-5">
           <h2 className="text-sm font-medium text-gray-900 dark:text-white">Attendance split</h2>
@@ -689,25 +693,6 @@ export default function Dashboard() {
           <div className="mt-3 flex justify-center gap-5 text-xs text-gray-500 dark:text-gray-400">
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 shrink-0" />Accredited</span>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-600 shrink-0" />Present</span>
-          </div>
-        </div>
-
-        {/* Ops bar */}
-        <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm p-5">
-          <h2 className="text-sm font-medium text-gray-900 dark:text-white">Meals &amp; rooms</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Operational metrics · today</p>
-          <div className="relative h-48">
-            <canvas ref={opsRef} role="img" aria-label={`Meals: ${meals}, Rooms checked: ${roomsChecked}, Rooms assigned: ${roomsAssigned}`}>
-              Meals: {meals}, Rooms checked: {roomsChecked}, Rooms assigned: {roomsAssigned}.
-            </canvas>
-          </div>
-          <div className="mt-3 flex justify-center gap-4 text-xs text-gray-500 dark:text-gray-400">
-            {[{ color: "#0ea5e9", label: "Meals" }, { color: "#f59e0b", label: "Checked" }, { color: "#a78bfa", label: "Assigned" }].map((item) => (
-              <span key={item.label} className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: item.color }} />
-                {item.label}
-              </span>
-            ))}
           </div>
         </div>
       </div>
@@ -783,10 +768,6 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-
-          
-
-   
 
         </div>
       </div>

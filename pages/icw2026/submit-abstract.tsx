@@ -181,7 +181,7 @@ if (correspondingAuthor && !correspondingAuthor.phone.trim()) {
             Abstract received
           </h1>
           <p className="text-gray-600 mb-6">
-            Thank you for submitting to the 2026 International Cancer Week
+            Thank you for submitting to the International Cancer Week 2026
             Conference. Your tracking reference is:
           </p>
           <div className="inline-block px-5 py-3 rounded-2xl bg-indigo-50 text-indigo-900 font-mono font-bold text-lg mb-6">
@@ -203,7 +203,7 @@ if (correspondingAuthor && !correspondingAuthor.phone.trim()) {
       <div className="bg-indigo-700 text-white">
         <div className="max-w-3xl mx-auto px-6 py-10">
           <p className="text-xxl font-bold uppercase tracking-widest text-indigo-300 mb-2">
-            2026 International Cancer Week &middot; 5&ndash;9 October 2026
+            International Cancer Week 2026 &middot; 5&ndash;9 October 2026
           </p>
           <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">
             Submit Your Abstract
@@ -478,7 +478,7 @@ if (correspondingAuthor && !correspondingAuthor.phone.trim()) {
       <div className="mt-8 text-center text-sm text-gray-400 dark:text-gray-500 pb-10">
         <p>
           © 2026 National Institute for Cancer Research & Treatment (NICRAT). All rights reserved.{" "}
-          <b>Powered by Resilience Nigeria - The Official Technology Partner of The 2026 International Cancer Week</b>
+          <b>Powered by Resilience Nigeria - The Official Technology Partner of The International Cancer Week 2026</b>
         </p>
       </div>
     </div>

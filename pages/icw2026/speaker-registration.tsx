@@ -480,7 +480,7 @@ export default function SpeakerRegistrationPage() {
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Registration received</h1>
           <p className="text-gray-600 mb-6">
-            Thank you for offering to speak at the 2026 International Cancer Week Conference. Your tracking
+            Thank you for offering to speak at the International Cancer Week 2026. Your tracking
             reference is:
           </p>
           <div className="inline-block px-5 py-3 rounded-2xl bg-indigo-50 text-indigo-900 font-mono font-bold text-lg mb-6">
@@ -499,7 +499,7 @@ export default function SpeakerRegistrationPage() {
       <div className="bg-indigo-800 text-white">
         <div className="max-w-3xl mx-auto px-6 py-10">
           <p className="text-xs font-bold uppercase tracking-widest text-indigo-300 mb-2 inline-flex items-center gap-2">
-            <Mic className="w-3.5 h-3.5" /> 2026 International Cancer Week &middot; 5&ndash;9 October 2026
+            <Mic className="w-3.5 h-3.5" /> International Cancer Week 2026 &middot; 5&ndash;9 October 2026
           </p>
           <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">Speaker Registration</h1>
           <p className="mt-3 text-indigo-100 max-w-2xl">
