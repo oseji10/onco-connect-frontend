@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useContext, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import { LogOut } from "lucide-react";
 import SidebarContext from "../../../context/SidebarContext";
-import routes, { IRoute, routeIsActive } from "../../../routes/sidebar";
+import routes, { IRoute, routeIsActive, filterRoutesByRole } from "../../../routes/sidebar";
+import { getRole, clearToken } from "../../../lib/auth";
 import SidebarSubmenu from "./SidebarSubmenu";
 import Image from "next/image";
 
@@ -18,7 +19,13 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
   const { closeSidebar, saveScroll } = useContext(SidebarContext);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const safeRoutes = routes.filter((route): route is IRoute => Boolean(route));
+  // Filtered by role BEFORE rendering — this is what was missing. Without
+  // it, every menu shows regardless of role, and RoleGuard only catches
+  // the mistake after the click (correctly, but too late for a good UX).
+  const safeRoutes = useMemo(() => {
+    const role = getRole();
+    return filterRoutesByRole(routes.filter((route): route is IRoute => Boolean(route)), role ?? undefined);
+  }, []);
 
   async function handleLogout() {
     if (isLoggingOut) return;
@@ -27,6 +34,7 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
 
     try {
       const token =
+        localStorage.getItem("csr_token") ||
         localStorage.getItem("token") ||
         localStorage.getItem("accessToken") ||
         sessionStorage.getItem("token") ||
@@ -48,7 +56,10 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
         }
       }
 
-      // Clear storage
+      // Clear the actual auth token (same key auth.ts / RoleGuard use).
+      clearToken();
+
+      // Clear other, possibly-stale keys from earlier iterations.
       localStorage.removeItem("token");
       localStorage.removeItem("accessToken");
       localStorage.removeItem("user");
@@ -58,10 +69,6 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       sessionStorage.removeItem("accessToken");
       sessionStorage.removeItem("user");
       sessionStorage.removeItem("authUser");
-
-      // Optional: clear everything if your auth is fully client-side
-      // localStorage.clear();
-      // sessionStorage.clear();
 
       // Hard redirect works better for logout flows
       window.location.href = "/";
@@ -81,8 +88,6 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
       closeSidebar();
     }
   }
-
-  // const Icon = route.icon;
 
   return (
     <div className="py-4 text-black dark:text-gray-400 flex flex-col h-full justify-between">
@@ -120,7 +125,7 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
             if (!route.path) return null;
 
             const active = routeIsActive(pathname, route);
-            const Icon = route.icon; // ✅ Move it here, inside the map
+            const Icon = route.icon;
 
             return (
               <li className="relative px-6 py-3 text-left" key={route.name}>

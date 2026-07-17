@@ -20,6 +20,22 @@ import {
   Input,
   WindmillContext,
 } from "@roketid/windmill-react-ui";
+import api from "../../lib/api";
+import { getRole, clearToken } from "../../lib/auth";
+
+interface Profile {
+  firstName: string;
+  lastName: string;
+  role: string | null;
+}
+
+function formatRoleLabel(role: string): string {
+  return role
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
 function Header() {
   const { mode, toggleMode } = useContext(WindmillContext);
@@ -28,9 +44,38 @@ function Header() {
   const [search, setSearch] = useState("");
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [profile, setProfile] = useState<Profile>({ firstName: "", lastName: "", role: null });
 
   const notificationsRef = useRef<HTMLLIElement | null>(null);
   const profileRef = useRef<HTMLLIElement | null>(null);
+
+  useEffect(() => {
+    // Role comes straight off the JWT — no request needed, and it's the
+    // same source of truth RoleGuard/permissions.ts already rely on.
+    const role = getRole();
+    setProfile((p) => ({ ...p, role }));
+
+    // Name isn't in the token, so this is the one place that needs a
+    // request. /auth/me returns { user: {...} } — note its `role` field
+    // is the raw numeric FK (e.g. 2), not the roleName string, so we only
+    // take firstName/lastName from here and keep using the JWT (above)
+    // for the role label, which is already the correct string.
+    api
+      .get("/auth/me")
+      .then(({ data }) => {
+        if (data?.user) {
+          setProfile((p) => ({
+            ...p,
+            firstName: data.user.firstName ?? p.firstName,
+            lastName: data.user.lastName ?? p.lastName,
+          }));
+        }
+      })
+      .catch(() => {
+        // No /auth/me endpoint yet, or the request failed — the header
+        // still shows the role from the token, just not the name.
+      });
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -82,6 +127,7 @@ function Header() {
 
     try {
       const token =
+        localStorage.getItem("csr_token") ||
         localStorage.getItem("token") ||
         localStorage.getItem("accessToken") ||
         sessionStorage.getItem("token") ||
@@ -103,7 +149,13 @@ function Header() {
         }
       }
 
-      // Clear storage
+      // Clear the actual auth token — this is the key RoleGuard and every
+      // authenticated request rely on, so it has to go for logout to mean
+      // anything.
+      clearToken();
+
+      // Clear other, possibly-stale keys from earlier iterations of this
+      // page so nothing lingers.
       localStorage.removeItem("token");
       localStorage.removeItem("accessToken");
       localStorage.removeItem("user");
@@ -114,10 +166,6 @@ function Header() {
       sessionStorage.removeItem("user");
       sessionStorage.removeItem("authUser");
 
-      // Optional: clear everything if your auth is fully client-side
-      // localStorage.clear();
-      // sessionStorage.clear();
-
       // Hard redirect works better for logout flows
       window.location.href = "/";
     } catch (error) {
@@ -126,6 +174,13 @@ function Header() {
       setIsLoggingOut(false);
     }
   }
+
+  const displayName =
+    profile.firstName || profile.lastName
+      ? `${profile.firstName} ${profile.lastName}`.trim()
+      : "Account";
+
+  const displayRole = profile.role ? formatRoleLabel(profile.role) : "Manage profile";
 
   return (
     <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur-md shadow-sm dark:border-gray-700 dark:bg-gray-800/90">
@@ -239,10 +294,10 @@ function Header() {
               />
               <div className="hidden sm:block">
                 <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                  Account
+                  {displayName}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Manage profile
+                  {displayRole}
                 </p>
               </div>
               <ChevronDown className="hidden h-4 w-4 text-gray-400 sm:block" />
@@ -252,10 +307,10 @@ function Header() {
               <div className="absolute right-0 mt-3 w-64 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800">
                 <div className="border-b border-gray-100 px-4 py-3 dark:border-gray-700">
                   <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                    My Account
+                    {displayName}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Profile and preferences
+                    {displayRole}
                   </p>
                 </div>
 
