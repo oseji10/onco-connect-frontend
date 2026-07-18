@@ -61,3 +61,9 @@ export function getFacilityId(): number | null {
   if (!token) return null;
   return decodeTokenPayload(token)?.facilityId ?? null;
 }
+
+export function getMustChangePassword(): boolean {
+  const token = getToken();
+  if (!token) return false;
+  return Boolean(decodeTokenPayload(token)?.mustChangePassword);
+}

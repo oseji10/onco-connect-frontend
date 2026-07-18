@@ -28,6 +28,20 @@ api.interceptors.response.use(
         window.location.href = "/";
       }
     }
+
+    // Safety net for ForcePasswordChangeGuard: if the backend says a
+    // password change is required but we somehow ended up making a
+    // request anyway (stale tab, guard hadn't run yet, etc.), redirect
+    // here too rather than surfacing the 423 as a generic error.
+    if (
+      error?.response?.status === 423 &&
+      error?.response?.data?.code === "PASSWORD_CHANGE_REQUIRED"
+    ) {
+      if (typeof window !== "undefined" && window.location.pathname !== "/icw/change-password") {
+        window.location.href = "/icw/change-password";
+      }
+    }
+
     return Promise.reject(error);
   }
 );
