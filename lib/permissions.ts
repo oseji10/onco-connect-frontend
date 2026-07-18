@@ -3,6 +3,7 @@ export type IcwRole =
   | "admin"
   | "reviewer"
   | "registration_desk_officer"
+  | "abstract_committee_member"
   | "participant";
 
 /**
@@ -35,6 +36,7 @@ export const ROLE_MENU_ACCESS: Record<IcwRole, string[] | "*"> = {
   // registration, view speakers, download own certificate) rather than
   // this staff sidebar, so nothing here maps to that admin menu set.
   participant: [],
+  abstract_committee_member: ["abstract-management", "abstract-review"],
 };
 
 export function canAccessMenu(role: string | undefined | null, menuKey?: string): boolean {

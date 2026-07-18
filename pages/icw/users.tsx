@@ -218,6 +218,8 @@ function UsersManagementPage() {
       reviewer: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400",
       registration_desk_officer:
         "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+      abstract_committee_member:
+        "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
     };
     return colors[role] || "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400";
   }
