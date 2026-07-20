@@ -93,7 +93,7 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
     <div className="py-4 text-black dark:text-gray-400 flex flex-col h-full justify-between">
       <div>
         <Link
-          href="/issam"
+          href="/icw/dashboard"
           className="text-left ml-6 text-lg font-bold text-gray-800 dark:text-gray-200"
           onClick={(e) => {
             const listEl = e.currentTarget.closest("ul") as HTMLElement | null;

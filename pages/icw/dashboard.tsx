@@ -20,6 +20,7 @@ import {
   Mic,
 } from "lucide-react";
 import api from "@/lib/api";
+import { getRole } from "@/lib/auth";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -142,6 +143,56 @@ const TOP_KPI_TITLES = new Set([
   "Open Incidents",
 ]);
 
+// Roles allowed to see the full metrics dashboard. Everyone else gets
+// ActionButtonsView instead — same idea as ROLE_MENU_ACCESS in
+// lib/permissions.ts, just scoped to this one page's internal layout
+// rather than sidebar visibility.
+const DASHBOARD_CARD_ROLES = new Set(["admin", "super_admin"]);
+
+// Quick actions shown per role on the simplified view. Keys must match
+// the roleName strings from the JWT / roles table exactly.
+const ROLE_ACTIONS: Record<
+  string,
+  { label: string; description: string; href: string; icon: React.ReactNode }[]
+> = {
+  reviewer: [
+    {
+      label: "Review Abstracts",
+      description: "View the abstracts assigned to you and submit your reviews.",
+      href: "/icw/abstract-review",
+      icon: <FileText className="w-6 h-6" />,
+    },
+  ],
+  registration_desk_officer: [
+    {
+      label: "Registration",
+      description: "Register new attendees for the event.",
+      href: "/icw/registration",
+      icon: <ClipboardList className="w-6 h-6" />,
+    },
+    {
+      label: "Accreditation",
+      description: "Accredit already-registered participants.",
+      href: "/icw/accreditation",
+      icon: <CheckCircle2 className="w-6 h-6" />,
+    },
+  ],
+  abstract_committee_member: [
+    {
+      label: "Abstract Management",
+      description: "View and manage submitted abstracts.",
+      href: "/icw/abstract-management",
+      icon: <FileText className="w-6 h-6" />,
+    },
+    {
+      label: "Review Abstracts",
+      description: "Review abstracts assigned to the committee.",
+      href: "/icw/abstract-review",
+      icon: <CheckCircle2 className="w-6 h-6" />,
+    },
+  ],
+};
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function SupervisorActivityBadge({ status }: { status: string }) {
@@ -250,6 +301,53 @@ function SmallInfoCard({
   );
 }
 
+// Simplified landing view for roles that don't get the metrics dashboard.
+// Reads its action set from ROLE_ACTIONS; a role with nothing configured
+// there (or an unrecognised role) gets a plain empty-state message rather
+// than a blank page.
+function ActionButtonsView({ role }: { role: string | null }) {
+  const router = useRouter();
+  const actions = (role && ROLE_ACTIONS[role]) || [];
+
+  return (
+    <div className="max-w-2xl mx-auto py-12 px-4">
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome back</h1>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">
+        Choose what you'd like to do.
+      </p>
+
+      {actions.length === 0 ? (
+        <p className="text-sm text-gray-400 dark:text-gray-500">
+          No quick actions are set up for your role yet.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {actions.map((action) => (
+            <button
+              key={action.href}
+              type="button"
+              onClick={() => router.push(action.href)}
+              className="flex items-start gap-4 text-left rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm p-5 transition hover:-translate-y-0.5 hover:shadow-md hover:border-emerald-200 dark:hover:border-emerald-700/50 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <div className="shrink-0 w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                {action.icon}
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {action.label}
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {action.description}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Chart helpers ─────────────────────────────────────────────────────────────
 
 function useChart(
@@ -288,6 +386,14 @@ function ChartScriptLoader({ onLoad }: { onLoad: () => void }) {
 export default function Dashboard() {
   const router = useRouter();
 
+  // Role is read synchronously from the JWT (same source RoleGuard and
+  // the sidebar filter use), but only inside an effect — reading it
+  // during the initial render would mismatch between server and client
+  // since localStorage isn't available server-side. roleReady gates
+  // rendering until that first effect has actually run.
+  const [role, setRole] = useState<string | null>(null);
+  const [roleReady, setRoleReady] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -300,6 +406,11 @@ export default function Dashboard() {
   const genderRef = useRef<HTMLCanvasElement>(null);
   const trendRef = useRef<HTMLCanvasElement>(null);
   const supBarRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    setRole(getRole());
+    setRoleReady(true);
+  }, []);
 
   // ── Normalise API payload ─────────────────────────────────────────────────
 
@@ -348,11 +459,21 @@ export default function Dashboard() {
     }
   };
 
+  // Only fetch the metrics dashboard's data once we know the role, and
+  // only for roles that actually see it — action-buttons roles never hit
+  // these endpoints at all.
   useEffect(() => {
+    if (!roleReady) return;
+
+    if (!role || !DASHBOARD_CARD_ROLES.has(role)) {
+      setLoading(false);
+      return;
+    }
+
     fetchDashboard(selectedDate);
     fetchTrend();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [roleReady, role]);
 
   // ── Derived values ────────────────────────────────────────────────────────
 
@@ -410,6 +531,8 @@ export default function Dashboard() {
   }
 
   // ── Charts ────────────────────────────────────────────────────────────────
+  // These hooks always run (rules-of-hooks) — they're just no-ops for
+  // action-buttons roles since their canvas refs never mount.
 
   useChart(donutRef, {
     type: "doughnut",
@@ -487,7 +610,27 @@ export default function Dashboard() {
     },
   }, [supervisorRows, chartReady]);
 
-  // ── Loading state ─────────────────────────────────────────────────────────
+  // ── Role gate ─────────────────────────────────────────────────────────────
+
+  if (!roleReady) {
+    return (
+      <Layout>
+        <div className="py-16 text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!role || !DASHBOARD_CARD_ROLES.has(role)) {
+    return (
+      <Layout>
+        <ActionButtonsView role={role} />
+      </Layout>
+    );
+  }
+
+  // ── Loading state (admin / super_admin only, past this point) ────────────
 
   if (loading) {
     return (
