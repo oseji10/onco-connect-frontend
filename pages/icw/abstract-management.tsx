@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Search,
   X,
@@ -27,8 +27,6 @@ import {
   REJECTION_REASONS,
   formatDate,
 } from "../../types/abstract-type";
-
-const ITEMS_PER_PAGE = 10;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -104,44 +102,77 @@ function Input(
 }
 
 function Pagination({
-  totalResults,
-  resultsPerPage,
-  onChange,
+  currentPage,
+  totalPages,
+  totalItems,
+  itemsPerPage,
+  onPageChange,
+  onItemsPerPageChange,
   label,
 }: {
-  totalResults: number;
-  resultsPerPage: number;
-  onChange: (page: number) => void;
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  itemsPerPage: number;
+  onPageChange: (page: number) => void;
+  onItemsPerPageChange: (limit: number) => void;
   label?: string;
 }) {
-  const totalPages = Math.max(1, Math.ceil(totalResults / resultsPerPage));
-  const [page, setPage] = useState(1);
+  const itemsPerPageOptions = [10, 20, 50, 100];
+
+  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+  const endItem = Math.min(currentPage * itemsPerPage, totalItems);
 
   function go(p: number) {
     const clamped = Math.min(Math.max(1, p), totalPages);
-    setPage(clamped);
-    onChange(clamped);
+    onPageChange(clamped);
   }
 
   return (
-    <nav aria-label={label} className="flex items-center justify-center gap-2">
-      <button
-        onClick={() => go(page - 1)}
-        disabled={page <= 1}
-        className="px-4 py-2 rounded-xl border-2 border-gray-200 text-sm font-semibold text-gray-600 disabled:opacity-40 hover:bg-gray-50"
-      >
-        Previous
-      </button>
-      <span className="text-sm text-gray-500 px-2">
-        Page {page} of {totalPages}
-      </span>
-      <button
-        onClick={() => go(page + 1)}
-        disabled={page >= totalPages}
-        className="px-4 py-2 rounded-xl border-2 border-gray-200 text-sm font-semibold text-gray-600 disabled:opacity-40 hover:bg-gray-50"
-      >
-        Next
-      </button>
+    <nav aria-label={label} className="flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-gray-600">
+          Showing <span className="font-semibold">{startItem}</span> to{" "}
+          <span className="font-semibold">{endItem}</span> of{" "}
+          <span className="font-semibold">{totalItems}</span> results
+        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">Rows:</span>
+          <select
+            value={itemsPerPage}
+            onChange={(e) => {
+              onItemsPerPageChange(Number(e.target.value));
+              onPageChange(1);
+            }}
+            className="h-9 rounded-lg border-2 border-gray-200 px-2 text-sm font-semibold bg-white focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
+          >
+            {itemsPerPageOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => go(currentPage - 1)}
+          disabled={currentPage <= 1}
+          className="px-4 py-2 rounded-xl border-2 border-gray-200 text-sm font-semibold text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition-colors"
+        >
+          Previous
+        </button>
+        <span className="text-sm text-gray-500 px-2">
+          Page {currentPage} of {totalPages}
+        </span>
+        <button
+          onClick={() => go(currentPage + 1)}
+          disabled={currentPage >= totalPages}
+          className="px-4 py-2 rounded-xl border-2 border-gray-200 text-sm font-semibold text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition-colors"
+        >
+          Next
+        </button>
+      </div>
     </nav>
   );
 }
@@ -205,31 +236,31 @@ function InviteReviewerModal({
         </div>
         <div className="p-6 space-y-4">
           <Input
-            className="h-12 rounded-2xl border-2 border-gray-200"
+            className="h-12 rounded-2xl border-2 border-gray-200 w-full px-4"
             placeholder="Full name"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
           <Input
-            className="h-12 rounded-2xl border-2 border-gray-200"
+            className="h-12 rounded-2xl border-2 border-gray-200 w-full px-4"
             placeholder="Email address"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
           <Input
-            className="h-12 rounded-2xl border-2 border-gray-200"
+            className="h-12 rounded-2xl border-2 border-gray-200 w-full px-4"
             placeholder="Affiliation (optional)"
             value={affiliation}
             onChange={(e) => setAffiliation(e.target.value)}
           />
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
-          <Button variant="outline" className="rounded-2xl h-11" onClick={onClose}>
+          <Button variant="outline" className="rounded-2xl h-11 px-6" onClick={onClose}>
             Cancel
           </Button>
           <Button
-            className="rounded-2xl h-11 bg-indigo-600 border-0"
+            className="rounded-2xl h-11 bg-indigo-600 border-0 px-6"
             onClick={handleInvite}
             disabled={submitting}
           >
@@ -344,11 +375,11 @@ function AssignReviewersModal({
           )}
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
-          <Button variant="outline" className="rounded-2xl h-11" onClick={onClose}>
+          <Button variant="outline" className="rounded-2xl h-11 px-6" onClick={onClose}>
             Cancel
           </Button>
           <Button
-            className="rounded-2xl h-11 bg-indigo-600 border-0"
+            className="rounded-2xl h-11 bg-indigo-600 border-0 px-6"
             onClick={handleAssign}
             disabled={submitting}
           >
@@ -372,6 +403,11 @@ function ViewAbstractModal({
   onDecision: (id: number, status: "accepted" | "rejected") => void;
 }) {
   if (!abstract) return null;
+
+  // Check if at least one review has been received
+  const hasReceivedReview = abstract.reviewers.some(
+    (reviewer) => reviewer.status === "submitted" || reviewer.review !== null
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -500,22 +536,38 @@ function ViewAbstractModal({
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
-          <Button
-            className="flex-1 rounded-2xl h-11 bg-green-600 hover:bg-green-700 border-0"
-            onClick={() => onDecision(abstract.id, "accepted")}
-          >
-            <CheckCircle className="w-4 h-4 mr-2" /> Accept
-          </Button>
-          <Button
-            className="flex-1 rounded-2xl h-11 bg-red-600 hover:bg-red-700 border-0"
-            onClick={() => onDecision(abstract.id, "rejected")}
-          >
-            <XCircle className="w-4 h-4 mr-2" /> Reject
-          </Button>
-          <Button variant="outline" className="rounded-2xl h-11" onClick={onClose}>
-            Close
-          </Button>
+        <div className="px-6 py-4 border-t border-gray-100">
+          {/* Warning message when no reviews received */}
+          {!hasReceivedReview && (
+            <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+              <p className="text-xs text-amber-700 flex items-center gap-2">
+                <ClockIcon className="w-4 h-4" />
+                At least one review is required before making a decision.
+              </p>
+            </div>
+          )}
+          
+          <div className="flex gap-3">
+            <Button
+              className="flex-1 rounded-2xl h-11 bg-green-600 hover:bg-green-700 border-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => onDecision(abstract.id, "accepted")}
+              disabled={!hasReceivedReview}
+              title={!hasReceivedReview ? "At least one review is required before accepting" : ""}
+            >
+              <CheckCircle className="w-4 h-4 mr-2" /> Accept
+            </Button>
+            <Button
+              className="flex-1 rounded-2xl h-11 bg-red-600 hover:bg-red-700 border-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => onDecision(abstract.id, "rejected")}
+              disabled={!hasReceivedReview}
+              title={!hasReceivedReview ? "At least one review is required before rejecting" : ""}
+            >
+              <XCircle className="w-4 h-4 mr-2" /> Reject
+            </Button>
+            <Button variant="outline" className="rounded-2xl h-11 px-6" onClick={onClose}>
+              Close
+            </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -531,25 +583,72 @@ export default function AbstractManagementPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterSubTheme, setFilterSubTheme] = useState<string>("all");
+  
+  // Pagination states - default to 10 items per page
   const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [assigningAbstract, setAssigningAbstract] = useState<Abstract | null>(null);
   const [viewingAbstract, setViewingAbstract] = useState<Abstract | null>(null);
   const [resendingId, setResendingId] = useState<number | null>(null);
 
-  async function fetchAbstracts() {
+  // Debounce search to avoid too many API calls
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Fetch abstracts with current filters and pagination
+  const fetchAbstracts = useCallback(async (page = currentPage, limit = itemsPerPage) => {
     try {
       setLoading(true);
-      const { data } = await api.get("/abstracts");
-      setAbstracts(data?.data?.items || []);
+      const params = new URLSearchParams();
+      // params.append('page', page.toString());
+      // params.append('limit', limit.toString());
+      params.append("perPage", limit.toString());
+      
+      // Add filters if they exist and are not "all"
+      if (debouncedSearch.trim()) {
+        params.append('search', debouncedSearch.trim());
+      }
+      if (filterStatus !== 'all') {
+        params.append('status', filterStatus);
+      }
+      if (filterSubTheme !== 'all') {
+        params.append('subTheme', filterSubTheme);
+      }
+      
+      const { data } = await api.get(`/abstracts?${params.toString()}`);
+      const responseData = data?.data;
+      
+      setAbstracts(responseData?.items || []);
+      setTotalItems(responseData?.total || 0);
+      setTotalPages(responseData?.totalPages || 1);
+      setCurrentPage(responseData?.page || 1);
     } catch (err) {
       toast.error("Failed to load abstracts.");
       setAbstracts([]);
+      setTotalItems(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
-  }
+  }, [debouncedSearch, filterStatus, filterSubTheme]);
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Fetch abstracts when dependencies change
+  useEffect(() => {
+    fetchAbstracts(currentPage, itemsPerPage);
+  }, [currentPage, itemsPerPage, fetchAbstracts]);
 
   async function fetchReviewers() {
     try {
@@ -572,8 +671,8 @@ export default function AbstractManagementPage() {
     }
   }
 
+  // Fetch reviewers on mount
   useEffect(() => {
-    fetchAbstracts();
     fetchReviewers();
   }, []);
 
@@ -582,33 +681,34 @@ export default function AbstractManagementPage() {
       await api.patch(`/abstracts/${id}/status`, { status });
       toast.success(`Abstract ${status}.`);
       setViewingAbstract(null);
-      await fetchAbstracts();
+      await fetchAbstracts(currentPage, itemsPerPage);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Failed to update status.");
     }
   }
 
-  const filtered = useMemo(() => {
-    let list = [...abstracts];
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      list = list.filter(
-        (a) =>
-          a.title.toLowerCase().includes(q) ||
-          a.reference.toLowerCase().includes(q) ||
-          a.authors.some((au) => au.name.toLowerCase().includes(q))
-      );
-    }
-    if (filterStatus !== "all") list = list.filter((a) => a.status === filterStatus);
-    if (filterSubTheme !== "all")
-      list = list.filter((a) => a.subTheme === filterSubTheme);
-    return list;
-  }, [abstracts, searchQuery, filterStatus, filterSubTheme]);
+  // Handle page change
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
 
-  const paginated = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return filtered.slice(start, start + ITEMS_PER_PAGE);
-  }, [filtered, currentPage]);
+  // Handle items per page change
+  const handleItemsPerPageChange = (limit: number) => {
+    setItemsPerPage(limit);
+    setCurrentPage(1); // Reset to first page when changing items per page
+  };
+
+  // Handle status filter change
+  const handleStatusChange = (value: string) => {
+    setFilterStatus(value);
+    setCurrentPage(1);
+  };
+
+  // Handle sub-theme filter change
+  const handleSubThemeChange = (value: string) => {
+    setFilterSubTheme(value);
+    setCurrentPage(1);
+  };
 
   return (
     <Layout>
@@ -695,25 +795,19 @@ export default function AbstractManagementPage() {
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
             <Input
-              className="pl-12 h-14 rounded-2xl border-2 border-gray-200 text-base font-semibold"
+              className="pl-12 h-14 rounded-2xl border-2 border-gray-200 text-base font-semibold w-full px-4"
               placeholder="Search by title, reference, or author..."
               value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => setSearchQuery(e.target.value)}
             />
             <div className="absolute inset-y-0 left-0 flex items-center ml-4 text-gray-400 pointer-events-none">
               <Search className="w-5 h-5" />
             </div>
           </div>
           <select
-            className="h-14 rounded-2xl border-2 border-gray-200 px-4 text-sm font-semibold"
+            className="h-14 rounded-2xl border-2 border-gray-200 px-4 text-sm font-semibold bg-white"
             value={filterStatus}
-            onChange={(e) => {
-              setFilterStatus(e.target.value);
-              setCurrentPage(1);
-            }}
+            onChange={(e) => handleStatusChange(e.target.value)}
           >
             <option value="all">All Status</option>
             <option value="submitted">Submitted</option>
@@ -723,12 +817,9 @@ export default function AbstractManagementPage() {
             <option value="rejected">Rejected</option>
           </select>
           <select
-            className="h-14 rounded-2xl border-2 border-gray-200 px-4 text-sm font-semibold"
+            className="h-14 rounded-2xl border-2 border-gray-200 px-4 text-sm font-semibold bg-white"
             value={filterSubTheme}
-            onChange={(e) => {
-              setFilterSubTheme(e.target.value);
-              setCurrentPage(1);
-            }}
+            onChange={(e) => handleSubThemeChange(e.target.value)}
           >
             <option value="all">All Sub-themes</option>
             {SUB_THEMES.map((s) => (
@@ -739,7 +830,7 @@ export default function AbstractManagementPage() {
           </select>
         </div>
         <div className="mt-3 text-sm text-gray-500">
-          {loading ? "Loading..." : `${filtered.length} abstract${filtered.length === 1 ? "" : "s"}`}
+          {loading ? "Loading..." : `${totalItems} abstract${totalItems === 1 ? "" : "s"}`}
         </div>
       </div>
 
@@ -748,7 +839,7 @@ export default function AbstractManagementPage() {
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-10 h-10 animate-spin text-teal-600" />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : abstracts.length === 0 ? (
         <div className="rounded-3xl bg-white border-2 border-gray-100 shadow-xl p-20 text-center text-gray-500">
           No abstracts match the current filters.
         </div>
@@ -767,7 +858,7 @@ export default function AbstractManagementPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {paginated.map((a) => (
+              {abstracts.map((a) => (
                 <tr key={a.id} className="hover:bg-gray-50">
                   <td className="px-5 py-4 font-mono text-xs text-gray-500">
                     {a.reference}
@@ -823,12 +914,15 @@ export default function AbstractManagementPage() {
         </div>
       )}
 
-      {!loading && filtered.length > 0 && (
+      {!loading && totalItems > 0 && (
         <div className="mt-8">
           <Pagination
-            totalResults={filtered.length}
-            resultsPerPage={ITEMS_PER_PAGE}
-            onChange={setCurrentPage}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            itemsPerPage={itemsPerPage}
+            onPageChange={handlePageChange}
+            onItemsPerPageChange={handleItemsPerPageChange}
             label="Abstracts navigation"
           />
         </div>
@@ -843,7 +937,7 @@ export default function AbstractManagementPage() {
         abstract={assigningAbstract}
         reviewers={reviewers}
         onClose={() => setAssigningAbstract(null)}
-        onAssigned={fetchAbstracts}
+        onAssigned={() => fetchAbstracts(currentPage, itemsPerPage)}
       />
       <ViewAbstractModal
         abstract={viewingAbstract}

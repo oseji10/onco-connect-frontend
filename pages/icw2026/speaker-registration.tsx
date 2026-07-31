@@ -975,6 +975,13 @@ export default function SpeakerRegistrationPage() {
           )}
         </div>
       </form>
+      {/* Footer */}
+        <div className="mt-8 text-center text-sm text-gray-400 dark:text-gray-500">
+          <p>
+            © 2026 National Institute for Cancer Research & Treatment (NICRAT). All rights reserved.{" "}
+            <b>Powered by Resilience Nigeria - The Official Technology Partner of The International Cancer Week 2026</b>
+          </p>
+        </div>
     </div>
   );
 }
