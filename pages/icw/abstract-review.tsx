@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Clock as ClockIcon,
   FileText,
+  Lock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -18,6 +19,13 @@ import {
   SUB_THEMES,
   ReviewScores,
 } from "../../types/abstract-type";
+
+type ConferenceSettings = {
+  abstractSubmissionDeadline: string | null;
+  abstractReviewDeadline: string | null;
+  submissionsClosed: boolean;
+  reviewsClosed: boolean;
+};
 
 function subThemeLabel(value: string) {
   return SUB_THEMES.find((s) => s.value === value)?.label ?? value;
@@ -97,10 +105,12 @@ function ReviewModal({
   abstract,
   onClose,
   onSubmitted,
+  reviewsClosed,
 }: {
   abstract: Abstract | null;
   onClose: () => void;
   onSubmitted: () => void;
+  reviewsClosed: boolean;
 }) {
   const [scores, setScores] = useState<ReviewScores>({
     significance: 0,
@@ -126,6 +136,10 @@ function ReviewModal({
     : 0;
 
   async function handleSubmit() {
+    if (reviewsClosed) {
+      toast.error("The review deadline has passed.");
+      return;
+    }
     if (!allScored) {
       toast.error("Please score all three criteria before submitting.");
       return;
@@ -165,6 +179,15 @@ function ReviewModal({
         </div>
 
         <div className="p-6 space-y-6">
+          {reviewsClosed && (
+            <div className="rounded-xl bg-amber-50 border-2 border-amber-100 px-4 py-3 flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-700 shrink-0" />
+              <p className="text-sm font-medium text-amber-800">
+                The review deadline has passed. You can view this abstract but can't submit a score.
+              </p>
+            </div>
+          )}
+
           <div>
             <p className="text-xs font-bold uppercase text-gray-500 mb-2">
               Abstract text
@@ -248,7 +271,7 @@ function ReviewModal({
           <Button
             className="rounded-2xl h-11 px-5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700"
             onClick={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || reviewsClosed}
           >
             <span className="inline-flex items-center gap-2">
               {submitting ? (
@@ -272,6 +295,7 @@ export default function ReviewerDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState<Abstract | null>(null);
   const [tab, setTab] = useState<"pending" | "completed">("pending");
+  const [settings, setSettings] = useState<ConferenceSettings | null>(null);
 
   async function fetchAssigned() {
     try {
@@ -289,6 +313,15 @@ export default function ReviewerDashboardPage() {
   useEffect(() => {
     fetchAssigned();
   }, []);
+
+  useEffect(() => {
+    api
+      .get("/conference-settings")
+      .then(({ data }) => setSettings(data?.data ?? null))
+      .catch(() => setSettings(null));
+  }, []);
+
+  const reviewsClosed = !!settings?.reviewsClosed;
 
   // Assumes the API scopes /reviews/assigned to the current reviewer and
   // includes only their own ReviewerAssignment entry per abstract.
@@ -317,6 +350,19 @@ export default function ReviewerDashboardPage() {
           Score assigned abstracts on significance, relevance, and originality
         </p>
       </div>
+
+      {reviewsClosed && (
+        <div className="mb-6 rounded-2xl bg-amber-50 border-2 border-amber-100 px-5 py-4 flex items-center gap-3">
+          <Lock className="w-5 h-5 text-amber-700 shrink-0" />
+          <p className="text-sm font-medium text-amber-800">
+            The review deadline
+            {settings?.abstractReviewDeadline
+              ? ` (${new Date(settings.abstractReviewDeadline).toLocaleString()})`
+              : ""}{" "}
+            has passed. You can no longer submit new reviews.
+          </p>
+        </div>
+      )}
 
       <div className="flex gap-2 mb-6">
         <button
@@ -391,9 +437,13 @@ export default function ReviewerDashboardPage() {
                 <Button
                   className="w-full rounded-2xl h-11 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700"
                   onClick={() => setReviewing(a)}
-                  disabled={mine?.status === "submitted"}
+                  disabled={mine?.status === "submitted" || reviewsClosed}
                 >
-                  {mine?.status === "submitted" ? "Review submitted" : "Score this abstract"}
+                  {mine?.status === "submitted"
+                    ? "Review submitted"
+                    : reviewsClosed
+                    ? "Review deadline passed"
+                    : "Score this abstract"}
                 </Button>
               </div>
             );
@@ -405,6 +455,7 @@ export default function ReviewerDashboardPage() {
         abstract={reviewing}
         onClose={() => setReviewing(null)}
         onSubmitted={fetchAssigned}
+        reviewsClosed={reviewsClosed}
       />
     </Layout>
   );

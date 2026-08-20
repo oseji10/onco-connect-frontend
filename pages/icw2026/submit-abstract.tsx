@@ -1,4 +1,4 @@
-import React, { FormEvent, useState } from "react";
+import React, { FormEvent, useEffect, useState } from "react";
 import {
   Plus,
   Trash2,
@@ -8,6 +8,7 @@ import {
   Building,
   Users,
   ClipboardList,
+  Lock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -21,6 +22,13 @@ import {
   SubThemeValue,
   PresentationType,
 } from "../../types/abstract-type";
+
+type ConferenceSettings = {
+  abstractSubmissionDeadline: string | null;
+  abstractReviewDeadline: string | null;
+  submissionsClosed: boolean;
+  reviewsClosed: boolean;
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -75,8 +83,21 @@ export default function SubmitAbstractPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submittedRef, setSubmittedRef] = useState<string | null>(null);
 
+  const [settings, setSettings] = useState<ConferenceSettings | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+
   const wordCount = countWords(form.body);
   const overLimit = wordCount > ABSTRACT_WORD_LIMIT;
+
+  useEffect(() => {
+    api
+      .get("/conference-settings")
+      .then(({ data }) => setSettings(data?.data ?? null))
+      .catch(() => setSettings(null))
+      .finally(() => setSettingsLoading(false));
+  }, []);
+
+  const submissionsClosed = !!settings?.submissionsClosed;
 
   function updateAuthor(id: string, patch: Partial<Author>) {
     setForm((prev) => ({
@@ -124,14 +145,14 @@ export default function SubmitAbstractPage() {
       newErrors.authors = "Every author needs a name and affiliation.";
     }
     const correspondingAuthor = form.authors.find((a) => a.isCorresponding);
-if (correspondingAuthor && !correspondingAuthor.email.trim()) {
-  newErrors.authors =
-    "The corresponding author needs an email address so we can reach them.";
-}
-if (correspondingAuthor && !correspondingAuthor.phone.trim()) {
-  newErrors.authors =
-    "The corresponding author needs a phone number so we can reach them.";
-}
+    if (correspondingAuthor && !correspondingAuthor.email.trim()) {
+      newErrors.authors =
+        "The corresponding author needs an email address so we can reach them.";
+    }
+    if (correspondingAuthor && !correspondingAuthor.phone.trim()) {
+      newErrors.authors =
+        "The corresponding author needs a phone number so we can reach them.";
+    }
     if (!form.declarationChecked) {
       newErrors.declarationChecked =
         "Please confirm the declaration before submitting.";
@@ -143,6 +164,10 @@ if (correspondingAuthor && !correspondingAuthor.phone.trim()) {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (submissionsClosed) {
+      toast.error("Submissions are closed.");
+      return;
+    }
     if (!validate()) {
       toast.error("Please fix the highlighted fields.");
       return;
@@ -191,6 +216,30 @@ if (correspondingAuthor && !correspondingAuthor.phone.trim()) {
             We'll email the corresponding author once the review process is
             complete. Keep this reference for any correspondence with the
             Abstract Committee.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Closed state ─────────────────────────────────────────────────────
+  if (!settingsLoading && submissionsClosed) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-indigo-950 via-indigo-900 to-white flex items-center justify-center p-6">
+        <div className="max-w-lg w-full bg-white rounded-3xl shadow-2xl p-10 text-center">
+          <div className="mx-auto w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-6">
+            <Lock className="w-8 h-8 text-gray-500" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            Submissions are closed
+          </h1>
+          <p className="text-gray-600">
+            The abstract submission deadline
+            {settings?.abstractSubmissionDeadline
+              ? ` (${new Date(settings.abstractSubmissionDeadline).toLocaleString()})`
+              : ""}{" "}
+            has passed. Please contact the Abstract Committee if you believe
+            this is an error.
           </p>
         </div>
       </div>
@@ -400,35 +449,35 @@ if (correspondingAuthor && !correspondingAuthor.phone.trim()) {
                 </div>
 
                 <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-3">
-  <input
-    className="h-11 rounded-xl border-2 border-gray-200 px-3.5 text-sm font-medium focus:border-indigo-600 focus:ring-indigo-600 outline-none flex-1"
-    placeholder="Email"
-    type="email"
-    value={author.email}
-    onChange={(e) =>
-      updateAuthor(author.id, { email: e.target.value })
-    }
-  />
-  <input
-    className="h-11 rounded-xl border-2 border-gray-200 px-3.5 text-sm font-medium focus:border-indigo-600 focus:ring-indigo-600 outline-none flex-1"
-    placeholder="Phone number"
-    type="tel"
-    value={author.phone}
-    onChange={(e) =>
-      updateAuthor(author.id, { phone: e.target.value })
-    }
-  />
-  <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 shrink-0">
-    <input
-      type="radio"
-      name="corresponding"
-      checked={author.isCorresponding}
-      onChange={() => setCorresponding(author.id)}
-      className="accent-indigo-700"
-    />
-    Corresponding author
-  </label>
-</div>
+                  <input
+                    className="h-11 rounded-xl border-2 border-gray-200 px-3.5 text-sm font-medium focus:border-indigo-600 focus:ring-indigo-600 outline-none flex-1"
+                    placeholder="Email"
+                    type="email"
+                    value={author.email}
+                    onChange={(e) =>
+                      updateAuthor(author.id, { email: e.target.value })
+                    }
+                  />
+                  <input
+                    className="h-11 rounded-xl border-2 border-gray-200 px-3.5 text-sm font-medium focus:border-indigo-600 focus:ring-indigo-600 outline-none flex-1"
+                    placeholder="Phone number"
+                    type="tel"
+                    value={author.phone}
+                    onChange={(e) =>
+                      updateAuthor(author.id, { phone: e.target.value })
+                    }
+                  />
+                  <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 shrink-0">
+                    <input
+                      type="radio"
+                      name="corresponding"
+                      checked={author.isCorresponding}
+                      onChange={() => setCorresponding(author.id)}
+                      className="accent-indigo-700"
+                    />
+                    Corresponding author
+                  </label>
+                </div>
               </div>
             ))}
           </div>
@@ -464,7 +513,7 @@ if (correspondingAuthor && !correspondingAuthor.phone.trim()) {
 
         <button
           type="submit"
-          disabled={submitting || !form.declarationChecked}
+          disabled={submitting || !form.declarationChecked || submissionsClosed}
           className="w-full h-14 rounded-2xl bg-indigo-700 text-white font-bold uppercase tracking-wide shadow-lg shadow-indigo-900/25 hover:from-indigo-900 hover:to-black transition-all disabled:opacity-60 inline-flex items-center justify-center gap-2"
         >
           {submitting ? (
