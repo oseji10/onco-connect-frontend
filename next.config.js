@@ -31,7 +31,7 @@ const nextConfig = {
   //   domains: [], // Add your image domains here
   // },
   
-  allowedDevOrigins: ['https://api.ticketa.com.ng'],
+  allowedDevOrigins: ['http://localhost:8007', 'http://localhost:3001', 'http://localhost:3002'],
 
 }
 

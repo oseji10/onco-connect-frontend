@@ -10,6 +10,7 @@ import {
   FileBadge,
   AwardIcon,
   UserCog,
+  ClipboardListIcon,
 } from "lucide-react";
 import { ComponentType } from "react";
 import { canAccessMenu } from "../lib/permissions";
@@ -88,10 +89,22 @@ const routes: IRoute[] = [
     menuKey: "abstract-management",
   },
   {
+    path: "/icw/abstract-ranking-dashboard",
+    icon: ClipboardListIcon,
+    name: "Abstract Ranking",
+    menuKey: "abstract-ranking-dashboard",
+  },
+  {
     path: "/icw/abstract-review",
     icon: VoteIcon,
     name: "Review Abstract",
     menuKey: "abstract-review",
+  },
+    {
+    path: "/icw/abstract-reviewer-dashboard",
+    icon: VoteIcon,
+    name: "Reviewer Dashboard",
+    menuKey: "abstract-reviewer-dashboard",
   },
   {
     path: "/icw/certificates",

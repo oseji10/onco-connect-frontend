@@ -30,13 +30,13 @@ export const ROLE_MENU_ACCESS: Record<IcwRole, string[] | "*"> = {
     // "users",
     // deliberately no "users" — admin cannot see the Add User menu
   ],
-  reviewer: ["abstract-review"],
+  reviewer: ["abstract-review","abstract-reviewer-dashboard"],
   registration_desk_officer: ["registration", "accreditation"],
   // Participants use a separate, narrower participant portal (manage own
   // registration, view speakers, download own certificate) rather than
   // this staff sidebar, so nothing here maps to that admin menu set.
   participant: [],
-  abstract_committee_member: ["abstract-management", "abstract-review"],
+  abstract_committee_member: ["abstract-management", "abstract-review","abstract-reviewer-dashboard", "abstract-ranking-dashboard"],
 };
 
 export function canAccessMenu(role: string | undefined | null, menuKey?: string): boolean {
