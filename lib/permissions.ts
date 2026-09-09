@@ -27,6 +27,7 @@ export const ROLE_MENU_ACCESS: Record<IcwRole, string[] | "*"> = {
     "sponsors",
     "speakers",
     "incident-report",
+    "abstract-ranking-dashboard",
     // "users",
     // deliberately no "users" — admin cannot see the Add User menu
   ],

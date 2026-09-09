@@ -10,10 +10,11 @@ import {
   X,
   PlayCircle,
   Eye,
+  ArrowUpDown,
   Star,
-  ArrowUp,
-  ArrowDown,
   Medal,
+  Send,
+  Megaphone,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -25,12 +26,18 @@ import { Abstract, SUB_THEMES, formatDate } from "../../types/abstract-type";
 // ─── Types for this page's API responses ───────────────────────────────────
 
 type BucketKey = "top30" | "subThemeTop5" | "posters" | "pending";
-type SortField = "rank" | "score" | "title";
-type SortDir = "asc" | "desc";
-type NotifiedFilter = "all" | "notified" | "not_sent";
+
+// AbstractResource doesn't expose these yet on the shared `Abstract` type
+// (see README) — declared locally until that's wired through.
+type RankedAbstract = Abstract & {
+  overallRank?: number | null;
+  subThemeRank?: number | null;
+  classificationGroup?: string | null;
+  decisionNotifiedAt?: string | null;
+};
 
 interface RankedRow {
-  abstract: Abstract;
+  abstract: RankedAbstract;
   notified: boolean;
   rank?: number;
   subTheme?: string;
@@ -45,8 +52,12 @@ interface ClassificationData {
   counts: Record<BucketKey, number>;
 }
 
+type SortKey = "rank" | "score" | "title" | "submitted";
+type SortDir = "asc" | "desc";
+type NotifiedFilter = "all" | "notified" | "not_notified";
+
 function subThemeLabel(value?: string) {
-  if (!value) return "";
+  if (!value) return "—";
   return SUB_THEMES.find((s) => s.value === value)?.label ?? value;
 }
 
@@ -93,113 +104,69 @@ function NotifiedBadge({ notified }: { notified: boolean }) {
   );
 }
 
-// Colored pill for the average score — green/amber/red by threshold, with
-// a bold, larger number so it reads at a glance down a column.
-function ScorePill({ score }: { score: number | null | undefined }) {
-  if (score == null) {
-    return <span className="text-sm text-gray-400">&mdash;</span>;
-  }
-  const tone =
-    score >= 4
-      ? "bg-green-50 text-green-800"
-      : score >= 2.5
-      ? "bg-amber-50 text-amber-800"
-      : "bg-red-50 text-red-700";
-  return (
-    <span className={`inline-flex items-baseline gap-1 rounded-lg px-2.5 py-1 font-bold ${tone}`}>
-      <Star className="w-3.5 h-3.5 self-center" />
-      <span className="text-base tabular-nums">{score.toFixed(2)}</span>
-      <span className="text-[11px] font-semibold opacity-60">/ 5</span>
-    </span>
-  );
-}
+// Beautified rank number: medal treatment for #1-3 of an official rank,
+// a plain teal/indigo badge for other official ranks, and a muted "list
+// position" badge when there's no official rank (posters / pending),
+// so the left-hand column always shows something legible.
+function RankBadge({
+  officialRank,
+  isSubTheme,
+  listPosition,
+}: {
+  officialRank?: number;
+  isSubTheme?: boolean;
+  listPosition: number;
+}) {
+  if (officialRank) {
+    const medal =
+      officialRank === 1
+        ? { bg: "bg-amber-100", text: "text-amber-700", ring: "ring-amber-300" }
+        : officialRank === 2
+        ? { bg: "bg-gray-200", text: "text-gray-700", ring: "ring-gray-300" }
+        : officialRank === 3
+        ? { bg: "bg-orange-100", text: "text-orange-700", ring: "ring-orange-300" }
+        : isSubTheme
+        ? { bg: "bg-indigo-50", text: "text-indigo-700", ring: "ring-indigo-200" }
+        : { bg: "bg-teal-50", text: "text-teal-700", ring: "ring-teal-200" };
 
-// Rank badge shown as the leftmost column. Overall top-30 ranks get a
-// medal treatment for the top 3; sub-theme ranks get a distinct purple
-// badge with the sub-theme underneath; posters/pending (which have no
-// formal rank) get a quiet numbered position instead.
-function RankBadge({ row, position }: { row: RankedRow; position: number }) {
-  if (row.rank != null) {
-    const medalTone =
-      row.rank === 1
-        ? "bg-amber-400 text-amber-950"
-        : row.rank === 2
-        ? "bg-gray-300 text-gray-800"
-        : row.rank === 3
-        ? "bg-orange-300 text-orange-950"
-        : "bg-teal-600 text-white";
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <span
-          className={`inline-flex items-center justify-center w-9 h-9 rounded-full font-extrabold text-sm tabular-nums ${medalTone}`}
+          className={`inline-flex items-center justify-center w-9 h-9 rounded-full ring-2 ${medal.bg} ${medal.text} ${medal.ring} font-extrabold text-sm tabular-nums`}
         >
-          {row.rank <= 3 ? <Medal className="w-4 h-4" /> : `#${row.rank}`}
-        </span>
-        {row.rank <= 3 && <span className="text-xs font-bold text-gray-500">#{row.rank}</span>}
-      </div>
-    );
-  }
-
-  if (row.subThemeRank != null) {
-    return (
-      <div className="flex flex-col items-start gap-0.5">
-        <span className="inline-flex items-center justify-center h-9 min-w-9 px-2 rounded-full font-extrabold text-sm tabular-nums bg-indigo-100 text-indigo-800">
-          #{row.subThemeRank}
-        </span>
-        <span className="text-[10px] text-gray-400 max-w-[8rem] truncate">
-          {subThemeLabel(row.subTheme)}
+          {officialRank <= 3 ? <Medal className="w-4 h-4" /> : `#${officialRank}`}
         </span>
       </div>
     );
   }
 
   return (
-    <span className="inline-flex items-center justify-center w-9 h-9 rounded-full font-bold text-sm tabular-nums bg-gray-100 text-gray-500">
-      {position}
+    <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-50 text-gray-400 font-bold text-sm tabular-nums ring-2 ring-gray-100">
+      {listPosition}
     </span>
   );
 }
 
-// Lists every author on the abstract with their email — the corresponding
-// author first and bolded, co-authors underneath in muted text — so emails
-// are visible straight from the table without opening the detail modal.
-function AuthorsCell({ authors }: { authors: Abstract["authors"] }) {
-  if (!authors || authors.length === 0) {
-    return <span className="text-xs text-gray-400">&mdash;</span>;
+// Beautified score: a colored pill instead of a bare number, tiered by
+// the same 2.5 threshold the classification itself uses.
+function ScoreBadge({ score }: { score: number | null | undefined }) {
+  if (score == null) {
+    return <span className="text-gray-400">—</span>;
   }
-  const sorted = [...authors].sort((a, b) => (b.isCorresponding ? 1 : 0) - (a.isCorresponding ? 1 : 0));
+  const tier =
+    score >= 4
+      ? "bg-green-100 text-green-800"
+      : score >= 2.5
+      ? "bg-amber-100 text-amber-800"
+      : "bg-red-100 text-red-700";
 
   return (
-    <div className="space-y-1">
-      {sorted.map((a) => (
-        <div key={a.id} className="leading-tight">
-          <p
-            className={`text-xs truncate ${
-              a.isCorresponding ? "font-bold text-gray-900" : "font-semibold text-gray-700"
-            }`}
-          >
-            {a.name}
-            {a.isCorresponding && <span className="ml-1 text-teal-700">(corresponding)</span>}
-          </p>
-          <p className="text-[11px] text-gray-500 truncate">{a.email}</p>
-        </div>
-      ))}
-    </div>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-sm tabular-nums ${tier}`}>
+      <Star className="w-3.5 h-3.5" />
+      {score.toFixed(2)}
+    </span>
   );
 }
-
-const BUCKET_TABS: { key: BucketKey; label: string; icon: React.ReactNode }[] = [
-  { key: "top30", label: "Overall Top 30 (Oral)", icon: <Trophy className="w-4 h-4" /> },
-  { key: "subThemeTop5", label: "Sub-theme Top 5 (Oral)", icon: <Layers className="w-4 h-4" /> },
-  { key: "posters", label: "Posters (≥ 2.5)", icon: <ImageIcon className="w-4 h-4" /> },
-  { key: "pending", label: "Pending (< 2.5)", icon: <ClockIcon className="w-4 h-4" /> },
-];
-
-const SORT_OPTIONS: { key: SortField; label: string }[] = [
-  { key: "rank", label: "Rank" },
-  { key: "score", label: "Score" },
-  { key: "title", label: "Title" },
-];
 
 // ─── Run classification confirm modal ───────────────────────────────────────
 
@@ -403,14 +370,18 @@ function ManualClassifyModal({
   );
 }
 
-// ─── View abstract detail modal (read-only — full detail from this page) ───
+// ─── View abstract modal (read-only detail + score breakdown) ──────────────
 
-function ViewRankingDetailModal({
+function ViewAbstractModal({
   row,
   onClose,
+  onSendEmail,
+  sending,
 }: {
   row: RankedRow | null;
   onClose: () => void;
+  onSendEmail: (abstractId: number) => void;
+  sending: boolean;
 }) {
   if (!row) return null;
   const { abstract } = row;
@@ -432,14 +403,18 @@ function ViewRankingDetailModal({
           <div className="grid grid-cols-2 gap-4">
             <div className="p-3 rounded-xl bg-gray-50">
               <p className="text-xs font-bold uppercase text-gray-500">Sub-theme</p>
-              <p className="text-sm font-semibold text-gray-900">
-                {subThemeLabel(abstract.subTheme) || "—"}
+              <p className="text-sm font-semibold text-gray-900">{subThemeLabel(abstract.subTheme)}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-gray-50">
+              <p className="text-xs font-bold uppercase text-gray-500">Presentation</p>
+              <p className="text-sm font-semibold text-gray-900 capitalize">
+                {abstract.presentationType || "Not yet decided"}
               </p>
             </div>
             <div className="p-3 rounded-xl bg-gray-50">
-              <p className="text-xs font-bold uppercase text-gray-500">Presentation type</p>
-              <p className="text-sm font-semibold text-gray-900 capitalize">
-                {abstract.presentationType || "—"}
+              <p className="text-xs font-bold uppercase text-gray-500">Average score</p>
+              <p className="text-sm font-semibold text-gray-900">
+                <ScoreBadge score={abstract.averageScore} />
               </p>
             </div>
             <div className="p-3 rounded-xl bg-gray-50">
@@ -449,20 +424,29 @@ function ViewRankingDetailModal({
                   ? `#${row.rank} overall`
                   : row.subThemeRank
                   ? `#${row.subThemeRank} in ${subThemeLabel(row.subTheme)}`
-                  : "—"}
+                  : "Unranked"}
               </p>
-            </div>
-            <div className="p-3 rounded-xl bg-gray-50">
-              <p className="text-xs font-bold uppercase text-gray-500">Average score</p>
-              <div className="mt-1">
-                <ScorePill score={abstract.averageScore} />
-              </div>
             </div>
           </div>
 
           <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50">
-            <p className="text-xs font-bold uppercase text-gray-500">Decision email</p>
-            <NotifiedBadge notified={row.notified} />
+            <div>
+              <p className="text-xs font-bold uppercase text-gray-500">Notification</p>
+              <div className="mt-1">
+                <NotifiedBadge notified={row.notified} />
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              className="rounded-xl h-9 px-4 text-xs"
+              onClick={() => onSendEmail(abstract.id)}
+              disabled={sending}
+            >
+              <span className="inline-flex items-center gap-2">
+                {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+                {row.notified ? "Resend email" : "Send email"}
+              </span>
+            </Button>
           </div>
 
           <div>
@@ -484,9 +468,7 @@ function ViewRankingDetailModal({
 
           <div>
             <p className="text-xs font-bold uppercase text-gray-500 mb-2">Abstract</p>
-            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-              {abstract.body}
-            </p>
+            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{abstract.body}</p>
           </div>
 
           <div>
@@ -515,13 +497,10 @@ function ViewRankingDetailModal({
                       <div className="mt-2 text-xs text-gray-600 space-y-1">
                         <p>
                           Significance {r.review.scores.significance} &middot; Relevance{" "}
-                          {r.review.scores.relevance} &middot; Originality{" "}
-                          {r.review.scores.originality} &mdash;{" "}
+                          {r.review.scores.relevance} &middot; Originality {r.review.scores.originality} &mdash;{" "}
                           <span className="font-bold">avg {r.review.average.toFixed(2)}</span>
                         </p>
-                        {r.review.comment && (
-                          <p className="italic text-gray-500">"{r.review.comment}"</p>
-                        )}
+                        {r.review.comment && <p className="italic text-gray-500">"{r.review.comment}"</p>}
                       </div>
                     )}
                   </div>
@@ -541,7 +520,245 @@ function ViewRankingDetailModal({
   );
 }
 
+// ─── Filter / sort toolbar ───────────────────────────────────────────────
+
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "rank", label: "Rank" },
+  { key: "score", label: "Score" },
+  { key: "title", label: "Title" },
+  { key: "submitted", label: "Submitted date" },
+];
+
+function Toolbar({
+  notifiedFilter,
+  onNotifiedFilterChange,
+  sortKey,
+  onSortKeyChange,
+  sortDir,
+  onToggleSortDir,
+}: {
+  notifiedFilter: NotifiedFilter;
+  onNotifiedFilterChange: (v: NotifiedFilter) => void;
+  sortKey: SortKey;
+  onSortKeyChange: (v: SortKey) => void;
+  sortDir: SortDir;
+  onToggleSortDir: () => void;
+}) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+      <div className="inline-flex rounded-xl border-2 border-gray-200 bg-white p-1">
+        {(
+          [
+            { value: "all", label: "All" },
+            { value: "notified", label: "Notified" },
+            { value: "not_notified", label: "Not sent" },
+          ] as const
+        ).map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => onNotifiedFilterChange(opt.value)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+              notifiedFilter === opt.value ? "bg-teal-600 text-white" : "text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-bold uppercase text-gray-500">Sort by</span>
+        <select
+          value={sortKey}
+          onChange={(e) => onSortKeyChange(e.target.value as SortKey)}
+          className="h-9 rounded-lg border-2 border-gray-200 px-3 text-sm font-semibold bg-white focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
+        >
+          {SORT_OPTIONS.map((opt) => (
+            <option key={opt.key} value={opt.key}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={onToggleSortDir}
+          title={sortDir === "asc" ? "Ascending" : "Descending"}
+          className="h-9 w-9 inline-flex items-center justify-center rounded-lg border-2 border-gray-200 text-gray-600 hover:bg-gray-50"
+        >
+          <ArrowUpDown className="w-4 h-4" />
+          <span className="sr-only">{sortDir}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const BUCKET_TABS: { key: BucketKey; label: string; icon: React.ReactNode }[] = [
+  { key: "top30", label: "Overall Top 30 (Oral)", icon: <Trophy className="w-4 h-4" /> },
+  { key: "subThemeTop5", label: "Sub-theme Top 5 (Oral)", icon: <Layers className="w-4 h-4" /> },
+  { key: "posters", label: "Posters (≥ 2.5)", icon: <ImageIcon className="w-4 h-4" /> },
+  { key: "pending", label: "Pending (< 2.5)", icon: <ClockIcon className="w-4 h-4" /> },
+];
+
+// ─── Custom message modal ───────────────────────────────────────────────
+// Two modes:
+//  - "category": broadcast to everyone in a named bucket (oral / poster /
+//    pending / rejected / all) — free text, admin picks the category here.
+//  - "selected": send to exactly the abstract IDs the admin checked in the
+//    table, regardless of which bucket each one is in.
+// Either way this hits the same /abstracts/notifications/custom endpoint
+// and never touches the automated decision emails or decision_notified_at.
+
+type MessageCategory = "oral" | "poster" | "pending" | "rejected" | "all";
+
+const MESSAGE_CATEGORIES: { value: MessageCategory; label: string }[] = [
+  { value: "oral", label: "Oral presenters" },
+  { value: "poster", label: "Poster presenters" },
+  { value: "pending", label: "Pending (not yet decided)" },
+  { value: "rejected", label: "Rejected" },
+  { value: "all", label: "Everyone" },
+];
+
+function CustomMessageModal({
+  isOpen,
+  onClose,
+  onSent,
+  mode,
+  selectedIds,
+  recipientCounts,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSent: () => void;
+  mode: "category" | "selected";
+  selectedIds: number[];
+  recipientCounts: Record<MessageCategory, number>;
+}) {
+  const [category, setCategory] = useState<MessageCategory>("oral");
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSubject("");
+      setMessage("");
+      setCategory("oral");
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const recipientCount = mode === "selected" ? selectedIds.length : recipientCounts[category] ?? 0;
+
+  async function handleSend() {
+    if (!subject.trim() || !message.trim()) {
+      toast.error("Subject and message are both required.");
+      return;
+    }
+    try {
+      setSubmitting(true);
+      const payload =
+        mode === "selected"
+          ? { abstractIds: selectedIds, subject: subject.trim(), message: message.trim() }
+          : { category, subject: subject.trim(), message: message.trim() };
+      const { data } = await api.post("/abstracts/notifications/custom", payload);
+      toast.success(data?.message || "Message sent.");
+      onSent();
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Failed to send message.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-gray-100">
+        <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-teal-50 to-emerald-50 flex items-start justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900 inline-flex items-center gap-2">
+              <Megaphone className="w-5 h-5 text-teal-700" />
+              {mode === "selected" ? "Message Selected Abstracts" : "Message a Category"}
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              {mode === "selected"
+                ? `Free-text message to the ${selectedIds.length} abstract(s) you've selected — e.g. a reclassification notice.`
+                : "Free-text message to every author currently in the chosen category."}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 shrink-0">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {mode === "category" && (
+            <div>
+              <label className="text-xs font-bold uppercase text-gray-500 mb-1 block">Send to</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as MessageCategory)}
+                className="w-full h-12 rounded-2xl border-2 border-gray-200 px-4 text-sm font-semibold bg-white focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
+              >
+                {MESSAGE_CATEGORIES.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label} ({recipientCounts[opt.value] ?? 0})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-bold uppercase text-gray-500 mb-1 block">Subject</label>
+            <input
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="e.g. Update on your presentation format"
+              className="w-full h-12 rounded-2xl border-2 border-gray-200 px-4 text-sm font-medium outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-bold uppercase text-gray-500 mb-1 block">Message</label>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={6}
+              placeholder="Write your message. Separate paragraphs with a blank line."
+              className="w-full rounded-2xl border-2 border-gray-200 px-4 py-3 text-sm font-medium outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 resize-none"
+            />
+          </div>
+
+          <p className="text-xs text-gray-400">
+            This will send to <span className="font-bold text-gray-600">{recipientCount}</span> recipient(s).
+            It won't change any abstract's status or presentation type.
+          </p>
+        </div>
+
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+          <Button variant="outline" className="rounded-2xl h-11 px-6" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            className="rounded-2xl h-11 bg-indigo-600 border-0 px-6"
+            onClick={handleSend}
+            disabled={submitting || recipientCount === 0}
+          >
+            <span className="inline-flex items-center gap-2">
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {submitting ? "Sending..." : `Send to ${recipientCount}`}
+            </span>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────
+
 
 export default function AbstractRankingsPage() {
   const [loading, setLoading] = useState(true);
@@ -552,11 +769,14 @@ export default function AbstractRankingsPage() {
   const [viewingRow, setViewingRow] = useState<RankedRow | null>(null);
   const [notifyingId, setNotifyingId] = useState<number | null>(null);
 
-  // Filter + sort controls
-  const [sortField, setSortField] = useState<SortField>("rank");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [notifiedFilter, setNotifiedFilter] = useState<NotifiedFilter>("all");
-  const [subThemeFilter, setSubThemeFilter] = useState<string>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("rank");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  // Cross-tab selection: an admin can check a couple of oral presenters
+  // and a couple of pending abstracts and message all of them at once.
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [messageModal, setMessageModal] = useState<"category" | "selected" | null>(null);
 
   const fetchPreview = useCallback(async () => {
     try {
@@ -575,10 +795,14 @@ export default function AbstractRankingsPage() {
     fetchPreview();
   }, [fetchPreview]);
 
-  // Reset filters that don't apply to every tab whenever the tab changes.
+  // Reset sort-by-rank to something sensible when switching into a bucket
+  // that has no official rank (posters / pending), so "Rank" doesn't
+  // silently no-op there.
   useEffect(() => {
-    setSubThemeFilter("all");
-  }, [activeTab]);
+    if ((activeTab === "posters" || activeTab === "pending") && sortKey === "rank") {
+      setSortKey("score");
+    }
+  }, [activeTab, sortKey]);
 
   async function handleSendIndividual(abstractId: number) {
     try {
@@ -586,6 +810,7 @@ export default function AbstractRankingsPage() {
       await api.post(`/abstracts/${abstractId}/notify`);
       toast.success("Notification sent.");
       await fetchPreview();
+      setViewingRow((prev) => (prev && prev.abstract.id === abstractId ? { ...prev, notified: true } : prev));
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Failed to send notification.");
     } finally {
@@ -593,53 +818,85 @@ export default function AbstractRankingsPage() {
     }
   }
 
-  const isPendingTab = activeTab === "pending";
-  const isSubThemeTab = activeTab === "subThemeTop5";
+  const bucketRows = data ? data[activeTab] : [];
 
-  const subThemeOptionsInTab = useMemo(() => {
-    if (!data || !isSubThemeTab) return [];
-    const values = new Set(data.subThemeTop5.map((r) => r.subTheme).filter(Boolean) as string[]);
-    return Array.from(values);
-  }, [data, isSubThemeTab]);
+  const visibleRows = useMemo(() => {
+    let rows = bucketRows;
 
-  const rows = useMemo(() => {
-    if (!data) return [] as RankedRow[];
-    let result = [...data[activeTab]];
-
-    if (notifiedFilter !== "all") {
-      result = result.filter((r) =>
-        notifiedFilter === "notified" ? r.notified : !r.notified
-      );
-    }
-    if (isSubThemeTab && subThemeFilter !== "all") {
-      result = result.filter((r) => r.subTheme === subThemeFilter);
+    if (notifiedFilter === "notified") {
+      rows = rows.filter((r) => r.notified);
+    } else if (notifiedFilter === "not_notified") {
+      rows = rows.filter((r) => !r.notified);
     }
 
-    const dir = sortDir === "asc" ? 1 : -1;
-    result.sort((a, b) => {
-      if (sortField === "score") {
-        const av = a.abstract.averageScore ?? -Infinity;
-        const bv = b.abstract.averageScore ?? -Infinity;
-        return (av - bv) * dir;
+    const withOrder = rows.map((row, idx) => ({ row, originalIndex: idx }));
+
+    withOrder.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "rank": {
+          const ra = a.row.rank ?? a.row.subThemeRank ?? Number.MAX_SAFE_INTEGER;
+          const rb = b.row.rank ?? b.row.subThemeRank ?? Number.MAX_SAFE_INTEGER;
+          cmp = ra - rb;
+          break;
+        }
+        case "score": {
+          const sa = a.row.abstract.averageScore ?? -Infinity;
+          const sb = b.row.abstract.averageScore ?? -Infinity;
+          cmp = sb - sa; // higher score first by default
+          break;
+        }
+        case "title":
+          cmp = a.row.abstract.title.localeCompare(b.row.abstract.title);
+          break;
+        case "submitted":
+          cmp = new Date(a.row.abstract.submittedAt).getTime() - new Date(b.row.abstract.submittedAt).getTime();
+          break;
       }
-      if (sortField === "title") {
-        return a.abstract.title.localeCompare(b.abstract.title) * dir;
-      }
-      // rank: fall back to overall rank, then sub-theme rank, then score
-      const ar = a.rank ?? a.subThemeRank ?? Infinity;
-      const br = b.rank ?? b.subThemeRank ?? Infinity;
-      if (ar !== br) return (ar - br) * dir;
-      const av = a.abstract.averageScore ?? -Infinity;
-      const bv = b.abstract.averageScore ?? -Infinity;
-      return (bv - av) * dir;
+      if (cmp === 0) cmp = a.originalIndex - b.originalIndex;
+      return sortDir === "asc" ? cmp : -cmp;
     });
 
-    return result;
-  }, [data, activeTab, notifiedFilter, subThemeFilter, isSubThemeTab, sortField, sortDir]);
+    return withOrder.map((w) => w.row);
+  }, [bucketRows, notifiedFilter, sortKey, sortDir]);
 
-  function toggleSortDir() {
-    setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+  const isPendingTab = activeTab === "pending";
+
+  function toggleSelected(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   }
+
+  const allVisibleSelected = visibleRows.length > 0 && visibleRows.every((r) => selectedIds.has(r.abstract.id));
+
+  function toggleSelectAllVisible() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        visibleRows.forEach((r) => next.delete(r.abstract.id));
+      } else {
+        visibleRows.forEach((r) => next.add(r.abstract.id));
+      }
+      return next;
+    });
+  }
+
+  // Recipient counts per category, for the category-message modal's
+  // dropdown. Oral = top30 + subThemeTop5.
+  const categoryCounts: Record<MessageCategory, number> = {
+    oral: (data?.counts?.top30 ?? 0) + (data?.counts?.subThemeTop5 ?? 0),
+    poster: data?.counts?.posters ?? 0,
+    pending: data?.counts?.pending ?? 0,
+    rejected: 0, // not tracked in the preview buckets — resolved server-side when sending
+    all: (data?.counts?.top30 ?? 0) + (data?.counts?.subThemeTop5 ?? 0) + (data?.counts?.posters ?? 0) + (data?.counts?.pending ?? 0),
+  };
 
   return (
     <Layout>
@@ -653,172 +910,118 @@ export default function AbstractRankingsPage() {
               manual call.
             </p>
           </div>
-          <Button
-            className="rounded-2xl h-12 px-5 bg-indigo-600 border-0"
-            onClick={() => setIsRunOpen(true)}
-          >
-            <span className="inline-flex items-center gap-2">
-              <PlayCircle className="w-5 h-5" />
-              Run Classification
-            </span>
-          </Button>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="rounded-2xl h-12 px-5 border-2"
+              onClick={() => setMessageModal("category")}
+            >
+              <span className="inline-flex items-center gap-2 font-bold">
+                <Megaphone className="w-5 h-5" />
+                Message Category
+              </span>
+            </Button>
+            <Button className="rounded-2xl h-12 px-5 bg-indigo-600 border-0" onClick={() => setIsRunOpen(true)}>
+              <span className="inline-flex items-center gap-2">
+                <PlayCircle className="w-5 h-5" />
+                Run Classification
+              </span>
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Summary counts */}
+      {/* Summary counts / tab selector */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {BUCKET_TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`rounded-2xl border-2 p-5 text-left transition-colors ${
-              activeTab === tab.key
-                ? "border-teal-500 bg-teal-50"
-                : "border-gray-100 bg-white hover:border-gray-200"
+              activeTab === tab.key ? "border-teal-500 bg-teal-50" : "border-gray-100 bg-white hover:border-gray-200"
             }`}
           >
             <div className="flex items-center gap-2 text-gray-500 mb-2">
               {tab.icon}
               <span className="text-xs font-bold uppercase">{tab.label}</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900">
-              {loading ? "—" : data?.counts?.[tab.key] ?? 0}
-            </p>
+            <p className="text-2xl font-bold text-gray-900">{loading ? "—" : data?.counts?.[tab.key] ?? 0}</p>
           </button>
         ))}
       </div>
 
-      {/* Filter + sort toolbar */}
-      <div className="rounded-2xl bg-white border-2 border-gray-100 shadow-sm p-4 mb-6 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold uppercase text-gray-400">Sort</span>
-          <div className="flex rounded-xl border-2 border-gray-200 overflow-hidden">
-            {SORT_OPTIONS.map((opt) => (
-              <button
-                key={opt.key}
-                onClick={() => setSortField(opt.key)}
-                className={`px-3 py-2 text-xs font-bold transition-colors ${
-                  sortField === opt.key
-                    ? "bg-teal-600 text-white"
-                    : "bg-white text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={toggleSortDir}
-            title={sortDir === "asc" ? "Ascending" : "Descending"}
-            className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border-2 border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50"
-          >
-            {sortDir === "asc" ? (
-              <ArrowUp className="w-3.5 h-3.5" />
-            ) : (
-              <ArrowDown className="w-3.5 h-3.5" />
-            )}
-            {sortDir === "asc" ? "Asc" : "Desc"}
-          </button>
-        </div>
-
-        <div className="h-6 w-px bg-gray-200 hidden sm:block" />
-
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold uppercase text-gray-400">Emails</span>
-          <div className="flex rounded-xl border-2 border-gray-200 overflow-hidden">
-            {(
-              [
-                { key: "all", label: "All" },
-                { key: "notified", label: "Notified" },
-                { key: "not_sent", label: "Not sent" },
-              ] as const
-            ).map((opt) => (
-              <button
-                key={opt.key}
-                onClick={() => setNotifiedFilter(opt.key)}
-                className={`px-3 py-2 text-xs font-bold transition-colors ${
-                  notifiedFilter === opt.key
-                    ? "bg-teal-600 text-white"
-                    : "bg-white text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {isSubThemeTab && subThemeOptionsInTab.length > 0 && (
-          <>
-            <div className="h-6 w-px bg-gray-200 hidden sm:block" />
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase text-gray-400">Sub-theme</span>
-              <select
-                value={subThemeFilter}
-                onChange={(e) => setSubThemeFilter(e.target.value)}
-                className="h-9 rounded-xl border-2 border-gray-200 px-3 text-xs font-bold text-gray-700 bg-white"
-              >
-                <option value="all">All</option>
-                {subThemeOptionsInTab.map((st) => (
-                  <option key={st} value={st}>
-                    {subThemeLabel(st)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </>
-        )}
-
-        <span className="ml-auto text-xs text-gray-400">
-          {loading ? "" : `${rows.length} shown`}
-        </span>
-      </div>
+      <Toolbar
+        notifiedFilter={notifiedFilter}
+        onNotifiedFilterChange={setNotifiedFilter}
+        sortKey={sortKey}
+        onSortKeyChange={setSortKey}
+        sortDir={sortDir}
+        onToggleSortDir={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+      />
 
       {/* Table */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-10 h-10 animate-spin text-teal-600" />
         </div>
-      ) : rows.length === 0 ? (
+      ) : visibleRows.length === 0 ? (
         <div className="rounded-3xl bg-white border-2 border-gray-100 shadow-xl p-20 text-center text-gray-500">
-          Nothing matches the current filters.
+          Nothing matches the current filter.
         </div>
       ) : (
         <div className="rounded-3xl bg-white border-2 border-gray-100 shadow-xl overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs font-bold uppercase text-gray-500">
               <tr>
+                <th className="text-left px-5 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 accent-teal-600"
+                    checked={allVisibleSelected}
+                    onChange={toggleSelectAllVisible}
+                    aria-label="Select all visible rows"
+                  />
+                </th>
                 <th className="text-left px-5 py-3">Rank</th>
                 <th className="text-left px-5 py-3">Reference</th>
                 <th className="text-left px-5 py-3">Title</th>
-                <th className="text-left px-5 py-3">Authors</th>
                 <th className="text-left px-5 py-3">Score</th>
                 <th className="text-left px-5 py-3">Status</th>
                 <th className="text-right px-5 py-3">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rows.map((row, idx) => (
-                <tr key={row.abstract.id} className="hover:bg-gray-50">
+              {visibleRows.map((row, idx) => (
+                <tr
+                  key={row.abstract.id}
+                  className={`hover:bg-gray-50 ${selectedIds.has(row.abstract.id) ? "bg-teal-50/50" : ""}`}
+                >
                   <td className="px-5 py-4">
-                    <RankBadge row={row} position={idx + 1} />
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 accent-teal-600"
+                      checked={selectedIds.has(row.abstract.id)}
+                      onChange={() => toggleSelected(row.abstract.id)}
+                      aria-label={`Select ${row.abstract.title}`}
+                    />
                   </td>
-                  <td className="px-5 py-4 font-mono text-xs text-gray-500">
-                    {row.abstract.reference}
+                  <td className="px-5 py-4">
+                    <RankBadge
+                      officialRank={row.rank ?? row.subThemeRank}
+                      isSubTheme={!row.rank && !!row.subThemeRank}
+                      listPosition={idx + 1}
+                    />
                   </td>
+                  <td className="px-5 py-4 font-mono text-xs text-gray-500">{row.abstract.reference}</td>
                   <td className="px-5 py-4 max-w-xs">
-                    <p className="font-semibold text-gray-900 line-clamp-1">
-                      {row.abstract.title}
-                    </p>
+                    <p className="font-semibold text-gray-900 line-clamp-1">{row.abstract.title}</p>
                     <p className="text-xs text-gray-400">
                       {formatDate(row.abstract.submittedAt)}
+                      {row.subTheme ? ` · ${subThemeLabel(row.subTheme)}` : ""}
                     </p>
                   </td>
-                  <td className="px-5 py-4 max-w-[220px]">
-                    <AuthorsCell authors={row.abstract.authors} />
-                  </td>
                   <td className="px-5 py-4">
-                    <ScorePill score={row.abstract.averageScore} />
+                    <ScoreBadge score={row.abstract.averageScore} />
                   </td>
                   <td className="px-5 py-4">
                     <NotifiedBadge notified={row.notified} />
@@ -827,8 +1030,8 @@ export default function AbstractRankingsPage() {
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={() => setViewingRow(row)}
-                        title="View full details"
                         className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                        title="View details"
                       >
                         <Eye className="w-4 h-4" />
                       </button>
@@ -863,17 +1066,49 @@ export default function AbstractRankingsPage() {
         </div>
       )}
 
-      <RunClassificationModal
-        isOpen={isRunOpen}
-        onClose={() => setIsRunOpen(false)}
-        onDone={fetchPreview}
+      {/* Sticky selection bar — appears once at least one row is checked */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 rounded-2xl bg-gray-900 text-white shadow-2xl px-5 py-3 flex items-center gap-4">
+          <span className="text-sm font-semibold">
+            {selectedIds.size} abstract{selectedIds.size === 1 ? "" : "s"} selected
+          </span>
+          <Button
+            className="rounded-xl h-9 px-4 bg-teal-500 border-0 text-xs"
+            onClick={() => setMessageModal("selected")}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <Send className="w-3.5 h-3.5" />
+              Send Message
+            </span>
+          </Button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="text-xs font-semibold text-gray-300 hover:text-white"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      <RunClassificationModal isOpen={isRunOpen} onClose={() => setIsRunOpen(false)} onDone={fetchPreview} />
+      <ManualClassifyModal row={classifyingRow} onClose={() => setClassifyingRow(null)} onDone={fetchPreview} />
+      <ViewAbstractModal
+        row={viewingRow}
+        onClose={() => setViewingRow(null)}
+        onSendEmail={handleSendIndividual}
+        sending={viewingRow != null && notifyingId === viewingRow.abstract.id}
       />
-      <ManualClassifyModal
-        row={classifyingRow}
-        onClose={() => setClassifyingRow(null)}
-        onDone={fetchPreview}
+      <CustomMessageModal
+        isOpen={messageModal !== null}
+        onClose={() => setMessageModal(null)}
+        onSent={() => {
+          if (messageModal === "selected") setSelectedIds(new Set());
+          fetchPreview();
+        }}
+        mode={messageModal ?? "category"}
+        selectedIds={Array.from(selectedIds)}
+        recipientCounts={categoryCounts}
       />
-      <ViewRankingDetailModal row={viewingRow} onClose={() => setViewingRow(null)} />
     </Layout>
   );
 }
