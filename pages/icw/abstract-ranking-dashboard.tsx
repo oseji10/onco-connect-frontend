@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import {
   Trophy,
   Layers,
@@ -15,6 +16,8 @@ import {
   Medal,
   Send,
   Megaphone,
+  FileDown,
+  Download,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -60,6 +63,93 @@ function subThemeLabel(value?: string) {
   if (!value) return "—";
   return SUB_THEMES.find((s) => s.value === value)?.label ?? value;
 }
+
+// ─── Excel export ───────────────────────────────────────────────────────
+// Client-side, via SheetJS — no backend round-trip needed since the page
+// already has every row it might export sitting in state.
+
+function correspondingAuthorOf(abstract: RankedAbstract) {
+  return abstract.authors?.find((a) => a.isCorresponding) ?? abstract.authors?.[0] ?? null;
+}
+
+function rankDisplayFor(row: RankedRow, listPosition: number, subThemeFilterActive: boolean): string {
+  if (row.rank) return `#${row.rank} overall`;
+  if (row.subThemeRank) return `#${row.subThemeRank} in ${subThemeLabel(row.subTheme)}`;
+  return subThemeFilterActive ? `#${listPosition} (in filtered sub-theme)` : `#${listPosition}`;
+}
+
+function rowsToWorksheet(rows: RankedRow[], subThemeFilterActive: boolean): XLSX.WorkSheet {
+  const records = rows.map((row, idx) => {
+    const author = correspondingAuthorOf(row.abstract);
+    return {
+      Rank: rankDisplayFor(row, idx + 1, subThemeFilterActive),
+      Reference: row.abstract.reference,
+      Title: row.abstract.title,
+      "Sub-theme": subThemeLabel(row.abstract.subTheme),
+      Score: row.abstract.averageScore ?? "",
+      "Presentation Type": row.abstract.presentationType ?? "",
+      Status: row.abstract.status,
+      Notified: row.notified ? "Yes" : "No",
+      "Submitted At": formatDate(row.abstract.submittedAt),
+      "Corresponding Author": author?.name ?? "",
+      "Author Email": author?.email ?? "",
+      Affiliation: author?.affiliation ?? "",
+    };
+  });
+
+  const ws = XLSX.utils.json_to_sheet(records);
+  ws["!cols"] = [
+    { wch: 22 }, // Rank
+    { wch: 14 }, // Reference
+    { wch: 45 }, // Title
+    { wch: 20 }, // Sub-theme
+    { wch: 8 }, // Score
+    { wch: 16 }, // Presentation Type
+    { wch: 12 }, // Status
+    { wch: 10 }, // Notified
+    { wch: 18 }, // Submitted At
+    { wch: 24 }, // Corresponding Author
+    { wch: 28 }, // Author Email
+    { wch: 28 }, // Affiliation
+  ];
+  return ws;
+}
+
+function downloadWorkbook(wb: XLSX.WorkBook, filename: string) {
+  XLSX.writeFile(wb, filename, { compression: true });
+}
+
+function todayStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Export exactly what's on screen for the active tab — i.e. respects the
+// current sub-theme filter, notified filter, and sort order.
+function exportViewToExcel(bucketLabel: string, rows: RankedRow[], subThemeFilterActive: boolean) {
+  if (rows.length === 0) {
+    toast.error("Nothing to export in the current view.");
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, rowsToWorksheet(rows, subThemeFilterActive), bucketLabel.slice(0, 31));
+  downloadWorkbook(wb, `abstracts-${bucketLabel.toLowerCase().replace(/\s+/g, "-")}-${todayStamp()}.xlsx`);
+}
+
+// Export every bucket, unfiltered, as separate sheets in one workbook.
+function exportAllToExcel(data: ClassificationData) {
+  const wb = XLSX.utils.book_new();
+  const sheets: { key: BucketKey; name: string }[] = [
+    { key: "top30", name: "Top 30 (Oral)" },
+    { key: "subThemeTop5", name: "Sub-theme Top 5 (Oral)" },
+    { key: "posters", name: "Posters" },
+    { key: "pending", name: "Pending" },
+  ];
+  sheets.forEach(({ key, name }) => {
+    XLSX.utils.book_append_sheet(wb, rowsToWorksheet(data[key], false), name.slice(0, 31));
+  });
+  downloadWorkbook(wb, `abstracts-all-categories-${todayStamp()}.xlsx`);
+}
+
 
 // ─── Local UI primitives (matching AbstractManagementPage) ─────────────────
 
@@ -107,15 +197,19 @@ function NotifiedBadge({ notified }: { notified: boolean }) {
 // Beautified rank number: medal treatment for #1-3 of an official rank,
 // a plain teal/indigo badge for other official ranks, and a muted "list
 // position" badge when there's no official rank (posters / pending),
-// so the left-hand column always shows something legible.
+// so the left-hand column always shows something legible. When a caption
+// is supplied (e.g. because a sub-theme filter is active), it's shown
+// under the badge to make clear what the number means.
 function RankBadge({
   officialRank,
   isSubTheme,
   listPosition,
+  caption,
 }: {
   officialRank?: number;
   isSubTheme?: boolean;
   listPosition: number;
+  caption?: string;
 }) {
   if (officialRank) {
     const medal =
@@ -130,20 +224,24 @@ function RankBadge({
         : { bg: "bg-teal-50", text: "text-teal-700", ring: "ring-teal-200" };
 
     return (
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-col items-start gap-1">
         <span
           className={`inline-flex items-center justify-center w-9 h-9 rounded-full ring-2 ${medal.bg} ${medal.text} ${medal.ring} font-extrabold text-sm tabular-nums`}
         >
           {officialRank <= 3 ? <Medal className="w-4 h-4" /> : `#${officialRank}`}
         </span>
+        {caption && <span className="text-[10px] font-semibold text-gray-400 leading-tight">{caption}</span>}
       </div>
     );
   }
 
   return (
-    <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-50 text-gray-400 font-bold text-sm tabular-nums ring-2 ring-gray-100">
-      {listPosition}
-    </span>
+    <div className="flex flex-col items-start gap-1">
+      <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-50 text-gray-400 font-bold text-sm tabular-nums ring-2 ring-gray-100">
+        {listPosition}
+      </span>
+      {caption && <span className="text-[10px] font-semibold text-gray-400 leading-tight">{caption}</span>}
+    </div>
   );
 }
 
@@ -530,40 +628,61 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 ];
 
 function Toolbar({
+  subThemeFilter,
+  onSubThemeFilterChange,
   notifiedFilter,
   onNotifiedFilterChange,
   sortKey,
   onSortKeyChange,
   sortDir,
   onToggleSortDir,
+  onExportView,
 }: {
+  subThemeFilter: string;
+  onSubThemeFilterChange: (v: string) => void;
   notifiedFilter: NotifiedFilter;
   onNotifiedFilterChange: (v: NotifiedFilter) => void;
   sortKey: SortKey;
   onSortKeyChange: (v: SortKey) => void;
   sortDir: SortDir;
   onToggleSortDir: () => void;
+  onExportView: () => void;
 }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-      <div className="inline-flex rounded-xl border-2 border-gray-200 bg-white p-1">
-        {(
-          [
-            { value: "all", label: "All" },
-            { value: "notified", label: "Notified" },
-            { value: "not_notified", label: "Not sent" },
-          ] as const
-        ).map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => onNotifiedFilterChange(opt.value)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-              notifiedFilter === opt.value ? "bg-teal-600 text-white" : "text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
+    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          value={subThemeFilter}
+          onChange={(e) => onSubThemeFilterChange(e.target.value)}
+          className="h-9 rounded-lg border-2 border-gray-200 px-3 text-sm font-semibold bg-white focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
+        >
+          <option value="all">All sub-themes</option>
+          {SUB_THEMES.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+
+        <div className="inline-flex rounded-xl border-2 border-gray-200 bg-white p-1">
+          {(
+            [
+              { value: "all", label: "All" },
+              { value: "notified", label: "Notified" },
+              { value: "not_notified", label: "Not sent" },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onNotifiedFilterChange(opt.value)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                notifiedFilter === opt.value ? "bg-teal-600 text-white" : "text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex items-center gap-2">
@@ -586,6 +705,14 @@ function Toolbar({
         >
           <ArrowUpDown className="w-4 h-4" />
           <span className="sr-only">{sortDir}</span>
+        </button>
+        <button
+          onClick={onExportView}
+          title="Export this view to Excel"
+          className="h-9 inline-flex items-center gap-1.5 rounded-lg border-2 border-gray-200 px-3 text-xs font-bold text-gray-600 hover:bg-gray-50"
+        >
+          <FileDown className="w-4 h-4" />
+          Export
         </button>
       </div>
     </div>
@@ -769,6 +896,7 @@ export default function AbstractRankingsPage() {
   const [viewingRow, setViewingRow] = useState<RankedRow | null>(null);
   const [notifyingId, setNotifyingId] = useState<number | null>(null);
 
+  const [subThemeFilter, setSubThemeFilter] = useState<string>("all");
   const [notifiedFilter, setNotifiedFilter] = useState<NotifiedFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -823,6 +951,10 @@ export default function AbstractRankingsPage() {
   const visibleRows = useMemo(() => {
     let rows = bucketRows;
 
+    if (subThemeFilter !== "all") {
+      rows = rows.filter((r) => r.abstract.subTheme === subThemeFilter);
+    }
+
     if (notifiedFilter === "notified") {
       rows = rows.filter((r) => r.notified);
     } else if (notifiedFilter === "not_notified") {
@@ -858,9 +990,15 @@ export default function AbstractRankingsPage() {
     });
 
     return withOrder.map((w) => w.row);
-  }, [bucketRows, notifiedFilter, sortKey, sortDir]);
+  }, [bucketRows, subThemeFilter, notifiedFilter, sortKey, sortDir]);
 
   const isPendingTab = activeTab === "pending";
+
+  // When a sub-theme filter is active and a row has no official rank
+  // (posters / pending), the list position within the filtered+sorted
+  // view IS effectively "rank within this sub-theme" — this caption
+  // makes that reading explicit instead of implying an official rank.
+  const subThemeFilterLabel = subThemeFilter !== "all" ? subThemeLabel(subThemeFilter) : null;
 
   function toggleSelected(id: number) {
     setSelectedIds((prev) => {
@@ -914,6 +1052,17 @@ export default function AbstractRankingsPage() {
             <Button
               variant="outline"
               className="rounded-2xl h-12 px-5 border-2"
+              onClick={() => data && exportAllToExcel(data)}
+              disabled={!data}
+            >
+              <span className="inline-flex items-center gap-2 font-bold">
+                <Download className="w-5 h-5" />
+                Export All
+              </span>
+            </Button>
+            <Button
+              variant="outline"
+              className="rounded-2xl h-12 px-5 border-2"
               onClick={() => setMessageModal("category")}
             >
               <span className="inline-flex items-center gap-2 font-bold">
@@ -951,12 +1100,21 @@ export default function AbstractRankingsPage() {
       </div>
 
       <Toolbar
+        subThemeFilter={subThemeFilter}
+        onSubThemeFilterChange={setSubThemeFilter}
         notifiedFilter={notifiedFilter}
         onNotifiedFilterChange={setNotifiedFilter}
         sortKey={sortKey}
         onSortKeyChange={setSortKey}
         sortDir={sortDir}
         onToggleSortDir={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+        onExportView={() =>
+          exportViewToExcel(
+            BUCKET_TABS.find((t) => t.key === activeTab)?.label ?? activeTab,
+            visibleRows,
+            subThemeFilter !== "all"
+          )
+        }
       />
 
       {/* Table */}
@@ -982,7 +1140,9 @@ export default function AbstractRankingsPage() {
                     aria-label="Select all visible rows"
                   />
                 </th>
-                <th className="text-left px-5 py-3">Rank</th>
+                <th className="text-left px-5 py-3">
+                  {subThemeFilterLabel ? `Rank (${subThemeFilterLabel})` : "Rank"}
+                </th>
                 <th className="text-left px-5 py-3">Reference</th>
                 <th className="text-left px-5 py-3">Title</th>
                 <th className="text-left px-5 py-3">Score</th>
@@ -1010,6 +1170,11 @@ export default function AbstractRankingsPage() {
                       officialRank={row.rank ?? row.subThemeRank}
                       isSubTheme={!row.rank && !!row.subThemeRank}
                       listPosition={idx + 1}
+                      caption={
+                        !row.rank && !row.subThemeRank && subThemeFilterLabel
+                          ? `in ${subThemeFilterLabel}`
+                          : undefined
+                      }
                     />
                   </td>
                   <td className="px-5 py-4 font-mono text-xs text-gray-500">{row.abstract.reference}</td>
@@ -1017,7 +1182,8 @@ export default function AbstractRankingsPage() {
                     <p className="font-semibold text-gray-900 line-clamp-1">{row.abstract.title}</p>
                     <p className="text-xs text-gray-400">
                       {formatDate(row.abstract.submittedAt)}
-                      {row.subTheme ? ` · ${subThemeLabel(row.subTheme)}` : ""}
+                      {" · "}
+                      {subThemeLabel(row.abstract.subTheme)}
                     </p>
                   </td>
                   <td className="px-5 py-4">

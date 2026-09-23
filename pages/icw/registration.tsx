@@ -22,6 +22,9 @@ import {
   Upload,
   Send,
   Accessibility,
+  ChevronDown,
+  ChevronRight,
+  Copy,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -99,6 +102,16 @@ type RegistrationResponse = {
   referenceNumber: string;
   fullName: string;
   email: string;
+};
+
+// ─── Grouped participant type ──────────────────────────────────────────────
+
+type ParticipantGroup = {
+  key: string; // phone-based key or unique attendeeId
+  phoneKey: string;
+  participants: Participant[];
+  isDuplicate: boolean;
+  representative: Participant;
 };
 
 // ─── Constants (page-specific) ─────────────────────────────────────────────
@@ -985,6 +998,7 @@ export default function RegistrationManagementPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [viewingParticipant, setViewingParticipant] = useState<Participant | null>(null);
   const [resendingPass, setResendingPass] = useState<number | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   async function handleResendPass(participant: Participant) {
     try {
@@ -1018,32 +1032,84 @@ export default function RegistrationManagementPage() {
     fetchParticipants();
   }, []);
 
-  const filteredParticipants = useMemo(() => {
+  // ─── Grouping logic: group by phone number ──────────────────────────────
+  const groupedParticipants = useMemo(() => {
+    const groups = new Map<string, Participant[]>();
+
+    for (const p of participants) {
+      // Normalize phone key: use country code + phone number
+      const phoneKey = p.phoneCountryCode
+        ? `${p.phoneCountryCode}${p.phoneNumber}`
+        : p.phoneNumber;
+      const normalizedKey = phoneKey.replace(/\D/g, ""); // digits only
+
+      if (!groups.has(normalizedKey)) {
+        groups.set(normalizedKey, []);
+      }
+      groups.get(normalizedKey)!.push(p);
+    }
+
+    const result: ParticipantGroup[] = [];
+    for (const [phoneKey, groupParticipants] of groups.entries()) {
+      result.push({
+        key: phoneKey,
+        phoneKey,
+        participants: groupParticipants,
+        isDuplicate: groupParticipants.length > 1,
+        representative: groupParticipants[0],
+      });
+    }
+
+    return result;
+  }, [participants]);
+
+  // ─── Filtering: search by name, phone, uniqueId, category, AND organization ─
+  const filteredGroups = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
-    if (!query) return participants;
+    if (!query) return groupedParticipants;
 
-    return participants.filter(
-      (p) =>
-        p.fullName.toLowerCase().includes(query) ||
-        p.phoneNumber.includes(query) ||
-        p.uniqueId?.toLowerCase().includes(query) ||
-        p.category.toLowerCase().includes(query) ||
-        getCategoryDisplayName(p.category).toLowerCase().includes(query)
+    return groupedParticipants.filter((group) =>
+      group.participants.some(
+        (p) =>
+          p.fullName.toLowerCase().includes(query) ||
+          p.phoneNumber.includes(query) ||
+          (p.phoneCountryCode && `${p.phoneCountryCode}${p.phoneNumber}`.includes(query)) ||
+          p.uniqueId?.toLowerCase().includes(query) ||
+          p.category.toLowerCase().includes(query) ||
+          getCategoryDisplayName(p.category).toLowerCase().includes(query) ||
+          p.organizationName?.toLowerCase().includes(query) ||
+          p.email?.toLowerCase().includes(query)
+      )
     );
-  }, [participants, searchQuery]);
+  }, [groupedParticipants, searchQuery]);
 
-  const paginatedParticipants = useMemo(() => {
+  // ─── Pagination on groups ────────────────────────────────────────────────
+  const paginatedGroups = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return filteredParticipants.slice(start, start + ITEMS_PER_PAGE);
-  }, [filteredParticipants, currentPage]);
+    return filteredGroups.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredGroups, currentPage]);
 
-  const totalPages = Math.ceil(filteredParticipants.length / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(filteredGroups.length / ITEMS_PER_PAGE);
+  const totalParticipants = filteredGroups.reduce((sum, g) => sum + g.participants.length, 0);
+  const duplicateGroupCount = filteredGroups.filter((g) => g.isDuplicate).length;
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
       setCurrentPage(Math.max(1, totalPages));
     }
   }, [currentPage, totalPages]);
+
+  function toggleGroup(key: string) {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
 
   function buildPayload(formData: FormData): globalThis.FormData {
     const payload = new FormData();
@@ -1169,6 +1235,121 @@ export default function RegistrationManagementPage() {
     setViewingParticipant(participant);
   }
 
+  // Render a single participant row
+  function renderParticipantRow(
+    participant: Participant,
+    index: number,
+    groupKey: string,
+    isNested: boolean = false,
+    groupSize: number = 1
+  ) {
+    const categoryDisplay = getCategoryDisplayName(participant.category);
+    return (
+      <tr
+        key={participant.attendeeId}
+        className={`border-b border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150 ${
+          isNested ? "bg-blue-50/30 dark:bg-blue-900/10" : ""
+        }`}
+      >
+        <td className="py-4 px-4 font-medium text-gray-400">
+          {isNested ? (
+            <span className="pl-6 text-xs text-blue-500 dark:text-blue-400 font-semibold">
+              ↳ {index + 1}
+            </span>
+          ) : (
+            index + 1
+          )}
+        </td>
+        <td className="py-4 px-4">
+          {participant.photoUrl ? (
+            <img
+              src={`${process.env.NEXT_PUBLIC_API_FILE_URL}${participant.photoUrl}`}
+              alt={participant.fullName}
+              className={`${isNested ? "w-8 h-8" : "w-10 h-10"} rounded-full object-cover border-2 border-gray-200 dark:border-gray-600`}
+            />
+          ) : participant.photo ? (
+            <img
+              src={participant.photo}
+              alt={participant.fullName}
+              className={`${isNested ? "w-8 h-8" : "w-10 h-10"} rounded-full object-cover border-2 border-gray-200 dark:border-gray-600`}
+            />
+          ) : (
+            <div className={`${isNested ? "w-8 h-8" : "w-10 h-10"} rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center border-2 border-gray-200 dark:border-gray-600`}>
+              <User className={`${isNested ? "w-4 h-4" : "w-5 h-5"} text-gray-400`} />
+            </div>
+          )}
+        </td>
+        <td className="py-4 px-4 font-mono text-xs font-bold uppercase">
+          {participant.uniqueId || "—"}
+        </td>
+        <td className={`py-4 px-4 font-bold uppercase whitespace-nowrap ${isNested ? "text-xs" : ""}`}>
+          {participant.title} {participant.fullName}
+          {participant.physicallyChallenged && (
+            <Accessibility className="w-3.5 h-3.5 inline-block ml-1.5 text-amber-500" />
+          )}
+          {isNested && (
+            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+              DUPLICATE
+            </span>
+          )}
+        </td>
+        <td className={`py-4 px-4 ${isNested ? "text-xs" : "text-sm"}`}>
+          {participant.phoneCountryCode
+            ? `${participant.phoneCountryCode} ${participant.phoneNumber}`
+            : participant.phoneNumber}
+        </td>
+        <td className={`py-4 px-4 uppercase ${isNested ? "text-xs" : "text-sm"}`}>
+          {participant.gender || "—"}
+        </td>
+        <td className={`py-4 px-4 font-semibold uppercase max-w-[120px] truncate ${isNested ? "text-[10px]" : "text-xs"}`}>
+          {categoryDisplay}
+        </td>
+        <td className="py-4 px-4">
+          <StatusBadge status={participant.participationType} />
+        </td>
+        <td className="py-4 px-4">
+          <div className="flex items-center justify-end gap-1">
+            <button
+              onClick={() => openViewModal(participant)}
+              className="p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+              title="View Details"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => handleResendPass(participant)}
+              disabled={resendingPass === participant.attendeeId || !participant.email}
+              className="p-2 rounded-xl text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={participant.email ? "Resend Pass" : "No email on record"}
+            >
+              {resendingPass === participant.attendeeId ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+            </button>
+
+            <button
+              onClick={() => openEditModal(participant)}
+              className="p-2 rounded-xl text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+              title="Edit"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setDeleteConfirm(participant.attendeeId)}
+              className="p-2 rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              title="Delete"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
   return (
     <Layout>
       <style jsx global>{`
@@ -1225,7 +1406,7 @@ export default function RegistrationManagementPage() {
         <div className="relative">
           <Input
             className="pl-12 h-14 rounded-2xl border-2 border-gray-200 dark:border-gray-600 shadow-sm text-base font-semibold focus:border-green-500 focus:ring-green-500 transition-all duration-200"
-            placeholder="Search by name, phone, unique ID, or category..."
+            placeholder="Search by name, phone, unique ID, category, or organization..."
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
@@ -1244,10 +1425,23 @@ export default function RegistrationManagementPage() {
             </button>
           )}
         </div>
-        <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-          {loading
-            ? "Loading..."
-            : `${filteredParticipants.length} participant${filteredParticipants.length === 1 ? "" : "s"}`}
+        <div className="mt-3 flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+          {loading ? (
+            "Loading..."
+          ) : (
+            <>
+              <span>
+                {filteredGroups.length} group{filteredGroups.length === 1 ? "" : "s"} •{" "}
+                {totalParticipants} participant{totalParticipants === 1 ? "" : "s"}
+              </span>
+              {duplicateGroupCount > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-bold">
+                  <Copy className="w-3 h-3" />
+                  {duplicateGroupCount} duplicate group{duplicateGroupCount === 1 ? "" : "s"} found
+                </span>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -1276,7 +1470,7 @@ export default function RegistrationManagementPage() {
                     <p className="mt-4 font-semibold">Loading participants...</p>
                   </td>
                 </tr>
-              ) : filteredParticipants.length === 0 ? (
+              ) : filteredGroups.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                     <Users className="w-12 h-12 mx-auto text-gray-400" />
@@ -1294,96 +1488,98 @@ export default function RegistrationManagementPage() {
                   </td>
                 </tr>
               ) : (
-                paginatedParticipants.map((participant, index) => {
-                  const categoryDisplay = getCategoryDisplayName(participant.category);
+                paginatedGroups.map((group, groupIndex) => {
+                  const isExpanded = expandedGroups.has(group.key);
+                  const displayIndex = (currentPage - 1) * ITEMS_PER_PAGE + groupIndex + 1;
+
+                  // Single participant — render normal row
+                  if (!group.isDuplicate) {
+                    return renderParticipantRow(group.representative, groupIndex, group.key, false, 1);
+                  }
+
+                  // Duplicate group — render group header row + nested rows when expanded
                   return (
-                    <tr
-                      key={participant.attendeeId}
-                      className="border-b border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150"
-                    >
-                      <td className="py-4 px-4 font-medium text-gray-400">
-                        {(currentPage - 1) * ITEMS_PER_PAGE + index + 1}
-                      </td>
-                      <td className="py-4 px-4">
-                        {participant.photoUrl ? (
-                          <img
-                            src={`${process.env.NEXT_PUBLIC_API_FILE_URL}${participant.photoUrl}`}
-                            alt={participant.fullName}
-                            className="lg:w-16 lg:h-16 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
-                          />
-                        ) : participant.photo ? (
-                          <img
-                            src={participant.photo}
-                            alt={participant.fullName}
-                            className="lg:w-12 lg:h-12 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center border-2 border-gray-200 dark:border-gray-600">
-                            <User className="w-5 h-5 text-gray-400" />
+                    <React.Fragment key={group.key}>
+                      {/* Group header row */}
+                      <tr
+                        className="border-b-2 border-amber-200 dark:border-amber-800/40 bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors cursor-pointer"
+                        onClick={() => toggleGroup(group.key)}
+                      >
+                        <td className="py-4 px-4 font-medium text-gray-500">
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="p-1 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleGroup(group.key);
+                              }}
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-amber-600" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 text-amber-600" />
+                              )}
+                            </button>
+                            <span className="text-sm font-bold">{displayIndex}</span>
                           </div>
-                        )}
-                      </td>
-                      <td className="py-4 px-4 font-mono text-xs font-bold uppercase">
-                        {participant.uniqueId || "—"}
-                      </td>
-                      <td className="py-4 px-4 font-bold uppercase whitespace-nowrap">
-                        {participant.title} {participant.fullName}
-                        {participant.physicallyChallenged && (
-                          <Accessibility className="w-3.5 h-3.5 inline-block ml-1.5 text-amber-500" />
-                        )}
-                      </td>
-                      <td className="py-4 px-4 text-sm">
-                        {participant.phoneCountryCode
-                          ? `${participant.phoneCountryCode} ${participant.phoneNumber}`
-                          : participant.phoneNumber}
-                      </td>
-                      <td className="py-4 px-4 text-sm uppercase">{participant.gender || "—"}</td>
-                      <td className="py-4 px-4 text-xs font-semibold uppercase max-w-[120px] truncate">
-                        {categoryDisplay}
-                      </td>
-                      <td className="py-4 px-4">
-                        <StatusBadge status={participant.participationType} />
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => openViewModal(participant)}
-                            className="p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
-                            title="View Details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-
-                          <button
-                            onClick={() => handleResendPass(participant)}
-                            disabled={resendingPass === participant.attendeeId || !participant.email}
-                            className="p-2 rounded-xl text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                            title={participant.email ? "Resend Pass" : "No email on record"}
-                          >
-                            {resendingPass === participant.attendeeId ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
+                        </td>
+                        <td className="py-4 px-4">
+                          {group.representative.photoUrl ? (
+                            <img
+                              src={`${process.env.NEXT_PUBLIC_API_FILE_URL}${group.representative.photoUrl}`}
+                              alt={group.representative.fullName}
+                              className="w-10 h-10 rounded-full object-cover border-2 border-amber-300 dark:border-amber-700"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center border-2 border-amber-300 dark:border-amber-700">
+                              <User className="w-5 h-5 text-amber-500" />
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-4 px-4 font-mono text-xs font-bold uppercase text-amber-700 dark:text-amber-300">
+                          {group.participants.length} registrations
+                        </td>
+                        <td className="py-4 px-4 font-bold uppercase whitespace-nowrap text-amber-800 dark:text-amber-200">
+                          <span className="inline-flex items-center gap-2">
+                            <Copy className="w-4 h-4" />
+                            {group.participants.length}× {group.representative.fullName}
+                            <span className="text-xs font-normal text-amber-600 dark:text-amber-400 normal-case">
+                              (same phone number)
+                            </span>
+                          </span>
+                        </td>
+                        <td className="py-4 px-4 text-sm font-semibold text-amber-700 dark:text-amber-300">
+                          {group.representative.phoneCountryCode
+                            ? `${group.representative.phoneCountryCode} ${group.representative.phoneNumber}`
+                            : group.representative.phoneNumber}
+                        </td>
+                        <td className="py-4 px-4 text-sm uppercase text-amber-700 dark:text-amber-300">
+                          {group.representative.gender || "—"}
+                        </td>
+                        <td className="py-4 px-4 text-xs font-semibold uppercase text-amber-700 dark:text-amber-300 max-w-[120px] truncate">
+                          {getCategoryDisplayName(group.representative.category)}
+                        </td>
+                        <td className="py-4 px-4">
+                          <StatusBadge status={group.representative.participationType} />
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex items-center justify-end gap-1 text-xs font-bold text-amber-700 dark:text-amber-300">
+                            {isExpanded ? "Collapse" : "Expand"}
+                            {isExpanded ? (
+                              <ChevronDown className="w-4 h-4" />
                             ) : (
-                              <Send className="w-4 h-4" />
+                              <ChevronRight className="w-4 h-4" />
                             )}
-                          </button>
+                          </div>
+                        </td>
+                      </tr>
 
-                          <button
-                            onClick={() => openEditModal(participant)}
-                            className="p-2 rounded-xl text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                            title="Edit"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirm(participant.attendeeId)}
-                            className="p-2 rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                      {/* Nested participant rows when expanded */}
+                      {isExpanded &&
+                        group.participants.map((participant, idx) =>
+                          renderParticipantRow(participant, idx, group.key, true, group.participants.length)
+                        )}
+                    </React.Fragment>
                   );
                 })
               )}
@@ -1391,13 +1587,13 @@ export default function RegistrationManagementPage() {
           </table>
         </div>
 
-        {!loading && filteredParticipants.length > 0 && (
+        {!loading && filteredGroups.length > 0 && (
           <div className="p-4 border-t border-gray-100 dark:border-gray-700">
             <Pagination
-              totalResults={filteredParticipants.length}
+              totalResults={filteredGroups.length}
               resultsPerPage={ITEMS_PER_PAGE}
               onChange={setCurrentPage}
-              label="Participants navigation"
+              label="Groups navigation"
             />
           </div>
         )}
