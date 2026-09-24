@@ -191,6 +191,21 @@ const ROLE_ACTIONS: Record<
       icon: <CheckCircle2 className="w-6 h-6" />,
     },
   ],
+
+  author: [
+    {
+      label: "My Abstracts ",
+      description: "View and manage your abstracts.",
+      href: "/icw/author-dashboard",
+      icon: <FileText className="w-6 h-6" />,
+    },
+    // {
+    //   label: "Review Abstracts",
+    //   description: "Review abstracts assigned to the committee.",
+    //   href: "/icw/abstract-review",
+    //   icon: <CheckCircle2 className="w-6 h-6" />,
+    // },
+  ],
 };
 
 // ── Sub-components ────────────────────────────────────────────────────────────

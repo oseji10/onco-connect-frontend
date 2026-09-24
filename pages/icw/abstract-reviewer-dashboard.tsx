@@ -1004,6 +1004,8 @@ export default function ReviewerDashboardPage() {
                   <h3 className="text-sm sm:text-base font-bold text-gray-900 line-clamp-2 mb-2">
                     {a.title}
                   </h3>
+
+                  
                 </div>
                 <button
                   onClick={() => setViewing(a)}

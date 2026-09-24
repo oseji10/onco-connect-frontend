@@ -1,12 +1,24 @@
-"use client";
-
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useContext, useMemo, useState } from "react";
+import {
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 import { LogOut } from "lucide-react";
 import SidebarContext from "../../../context/SidebarContext";
-import routes, { IRoute, routeIsActive, filterRoutesByRole } from "../../../routes/sidebar";
-import { getRole, clearToken } from "../../../lib/auth";
+
+import routes, {
+  IRoute,
+  routeIsActive,
+  filterRoutesByRoles,
+} from "../../../routes/sidebar";
+
+import {
+  getRoles,
+  clearToken,
+} from "../../../lib/auth";
+
 import SidebarSubmenu from "./SidebarSubmenu";
 import Image from "next/image";
 
@@ -22,10 +34,16 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
   // Filtered by role BEFORE rendering — this is what was missing. Without
   // it, every menu shows regardless of role, and RoleGuard only catches
   // the mistake after the click (correctly, but too late for a good UX).
-  const safeRoutes = useMemo(() => {
-    const role = getRole();
-    return filterRoutesByRole(routes.filter((route): route is IRoute => Boolean(route)), role ?? undefined);
-  }, []);
+const safeRoutes = useMemo(() => {
+  const roles = getRoles();
+
+  return filterRoutesByRoles(
+    routes.filter(
+      (route): route is IRoute => Boolean(route)
+    ),
+    roles
+  );
+}, []);
 
   async function handleLogout() {
     if (isLoggingOut) return;
@@ -138,9 +156,8 @@ export default function SidebarContent({ linkClicked }: SidebarContentProps) {
 
                 <Link
                   href={route.path}
-                  className={`text-left flex items-center gap-3 w-full text-sm font-semibold transition-colors duration-150 hover:text-green-700 dark:hover:text-green-400 ${
-                    active ? "text-left text-black dark:text-white" : ""
-                  }`}
+                  className={`text-left flex items-center gap-3 w-full text-sm font-semibold transition-colors duration-150 hover:text-green-700 dark:hover:text-green-400 ${active ? "text-left text-black dark:text-white" : ""
+                    }`}
                   onClick={(e) => {
                     const listEl = e.currentTarget.closest(
                       "ul",

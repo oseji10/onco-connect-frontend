@@ -4,6 +4,7 @@ export type IcwRole =
   | "reviewer"
   | "registration_desk_officer"
   | "abstract_committee_member"
+  | "author"
   | "participant";
 
 /**
@@ -32,6 +33,7 @@ export const ROLE_MENU_ACCESS: Record<IcwRole, string[] | "*"> = {
     // deliberately no "users" — admin cannot see the Add User menu
   ],
   reviewer: ["abstract-review","abstract-reviewer-dashboard"],
+  author: ["author-dashboard"],
   registration_desk_officer: ["registration", "accreditation"],
   // Participants use a separate, narrower participant portal (manage own
   // registration, view speakers, download own certificate) rather than
@@ -40,14 +42,35 @@ export const ROLE_MENU_ACCESS: Record<IcwRole, string[] | "*"> = {
   abstract_committee_member: ["abstract-management", "abstract-review","abstract-reviewer-dashboard", "abstract-ranking-dashboard"],
 };
 
-export function canAccessMenu(role: string | undefined | null, menuKey?: string): boolean {
-  // Routes with no menuKey (e.g. a bare divider) are always shown once authenticated.
+// export function canAccessMenu(role: string | undefined | null, menuKey?: string): boolean {
+//   // Routes with no menuKey (e.g. a bare divider) are always shown once authenticated.
+//   if (!menuKey) return true;
+//   if (!role) return false;
+
+//   const allowed = ROLE_MENU_ACCESS[role as IcwRole];
+//   if (!allowed) return false;
+//   if (allowed === "*") return true;
+
+//   return allowed.includes(menuKey);
+// }
+
+export function canAccessMenu(
+  roles: IcwRole[] | undefined | null,
+  menuKey?: string
+): boolean {
   if (!menuKey) return true;
-  if (!role) return false;
 
-  const allowed = ROLE_MENU_ACCESS[role as IcwRole];
-  if (!allowed) return false;
-  if (allowed === "*") return true;
+  if (!roles || roles.length === 0) {
+    return false;
+  }
 
-  return allowed.includes(menuKey);
+  return roles.some((role) => {
+    const allowed = ROLE_MENU_ACCESS[role];
+
+    if (!allowed) return false;
+
+    if (allowed === "*") return true;
+
+    return allowed.includes(menuKey);
+  });
 }

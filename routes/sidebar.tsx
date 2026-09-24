@@ -13,26 +13,34 @@ import {
   ClipboardListIcon,
 } from "lucide-react";
 import { ComponentType } from "react";
-import { canAccessMenu } from "../lib/permissions";
+import { canAccessMenu, IcwRole } from "../lib/permissions";
 
-interface IRoute {
+export interface IRoute {
   path?: string;
   icon?: ComponentType<{ className?: string }>;
   name: string;
   routes?: IRoute[];
   checkActive?: (pathname: string, route: IRoute) => boolean;
   exact?: boolean;
-  /** Key checked against ROLE_MENU_ACCESS in lib/permissions.ts. Omit for
-   * always-visible entries (rare — most menus should carry one). */
+
+  /**
+   * Key checked against ROLE_MENU_ACCESS in lib/permissions.ts.
+   * Routes without a menuKey are visible to authenticated users.
+   */
   menuKey?: string;
 }
 
+/**
+ * Determines whether a route is currently active.
+ */
 export function routeIsActive(pathname: string, route: IRoute): boolean {
   if (route.checkActive) {
     return route.checkActive(pathname, route);
   }
 
-  if (!route.path) return false;
+  if (!route.path) {
+    return false;
+  }
 
   if (route.exact) {
     return pathname === route.path;
@@ -42,18 +50,54 @@ export function routeIsActive(pathname: string, route: IRoute): boolean {
 }
 
 /**
- * Filters the sidebar to what `role` is allowed to see. This is a UX nicety
- * only — actual enforcement happens server-side via the `role:` middleware.
- * Call this with the signed-in user's role before rendering the sidebar,
- * and guard each page itself with <RoleGuard menuKey="..."> too, since a
- * hidden menu doesn't stop someone from typing the URL directly.
+ * Filters sidebar routes based on ALL roles assigned to the authenticated user.
+ *
+ * A user only needs ONE of their roles to have access to a menu item.
+ *
+ * Example:
+ *   roles: ["admin", "reviewer"]
+ *
+ * If admin can access "certificates", the menu is shown, even if reviewer cannot.
+ *
+ * This is UI-level access control only. Laravel must still enforce
+ * authorization server-side.
  */
-export function filterRoutesByRole(routes: IRoute[], role?: string): IRoute[] {
+export function filterRoutesByRoles(
+  routes: IRoute[],
+  roles: IcwRole[] | undefined | null,
+): IRoute[] {
+  if (!roles || roles.length === 0) {
+    return [];
+  }
+
   return routes
-    .filter((route) => canAccessMenu(role, route.menuKey))
-    .map((route) =>
-      route.routes ? { ...route, routes: filterRoutesByRole(route.routes, role) } : route
-    );
+    .map((route) => {
+      /**
+       * Parent route with children.
+       *
+       * We recursively filter the children and only keep the parent
+       * if at least one child remains.
+       */
+      if (route.routes && route.routes.length > 0) {
+        const filteredChildren = filterRoutesByRoles(route.routes, roles);
+
+        if (filteredChildren.length === 0) {
+          return null;
+        }
+
+        return { ...route, routes: filteredChildren };
+      }
+
+      /**
+       * Normal route.
+       */
+      if (canAccessMenu(roles, route.menuKey)) {
+        return route;
+      }
+
+      return null;
+    })
+    .filter((route): route is IRoute => route !== null);
 }
 
 const routes: IRoute[] = [
@@ -100,7 +144,7 @@ const routes: IRoute[] = [
     name: "Review Abstract",
     menuKey: "abstract-review",
   },
-    {
+  {
     path: "/icw/abstract-reviewer-dashboard",
     icon: VoteIcon,
     name: "Reviewer Dashboard",
@@ -125,7 +169,7 @@ const routes: IRoute[] = [
     menuKey: "speakers",
   },
   {
-    path: "incident-report",
+    path: "/icw/incident-report",
     icon: AlertTriangle,
     name: "Incident Reporting",
     menuKey: "incident-report",
@@ -136,7 +180,13 @@ const routes: IRoute[] = [
     name: "User Management",
     menuKey: "users",
   },
+
+  {
+  path: "/icw/author-dashboard",
+  icon: FileBadge,
+  name: "My Abstracts",
+  menuKey: "author-dashboard",
+},
 ];
 
-export type { IRoute };
 export default routes;
