@@ -267,7 +267,9 @@ function Pagination({
   onItemsPerPageChange: (limit: number) => void;
   label?: string;
 }) {
-  const options = [10, 20, 50, 100, 200, 500, 1000];
+  // Kept small so the table doesn't blow up the DOM. If you need more per
+  // page, add virtualization rather than raising these numbers.
+  const options = [10, 20, 50];
   const startItem =
     totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
   const endItem = Math.min(currentPage * itemsPerPage, totalItems);
@@ -328,6 +330,98 @@ function Pagination({
     </nav>
   );
 }
+
+// ─── Abstract Row (memoized) ─────────────────────────────────────────────
+
+const AbstractRow = React.memo(function AbstractRow({
+  a,
+  onView,
+  onVersions,
+  onAssign,
+}: {
+  a: Abstract;
+  onView: (a: Abstract) => void;
+  onVersions: (a: Abstract) => void;
+  onAssign: (a: Abstract) => void;
+}) {
+  const { total, done } = reviewTally(a);
+  const hasMultipleVersions = (a.version ?? 1) > 1;
+
+  return (
+    <tr className="hover:bg-gray-50 align-top">
+      <td className="px-5 py-4 font-mono text-xs text-gray-500">
+        {a.reference}
+      </td>
+      <td className="px-5 py-4 max-w-md">
+        <p className="font-semibold text-gray-900 leading-snug break-words whitespace-normal">
+          {a.title}
+        </p>
+        <p className="text-xs text-gray-400 mt-1">
+          {formatDate(a.submittedAt)}
+        </p>
+      </td>
+      <td className="px-5 py-4 text-xs text-gray-600 max-w-[180px]">
+        {subThemeLabel(a.subTheme)}
+      </td>
+      <td className="px-5 py-4">
+        <StatusBadge status={a.status} />
+      </td>
+      <td className="px-5 py-4">
+        <button
+          type="button"
+          onClick={() => onVersions(a)}
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold transition-colors ${
+            hasMultipleVersions
+              ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          }`}
+          title="View version history"
+        >
+          <GitBranch className="w-3 h-3" />
+          v{a.version ?? 1}
+        </button>
+      </td>
+      <td className="px-5 py-4">
+        {a.averageScore != null ? (
+          <span className="inline-flex items-center gap-1 font-semibold text-gray-900">
+            <Star className="w-3.5 h-3.5 text-amber-500" />
+            {Number(a.averageScore).toFixed(2)}
+          </span>
+        ) : (
+          <span className="text-gray-400">&mdash;</span>
+        )}
+      </td>
+      <td className="px-5 py-4">
+        <ReviewProgressPill total={total} done={done} compact />
+      </td>
+      <td className="px-5 py-4">
+        <div className="flex items-center justify-end gap-1.5">
+          <button
+            onClick={() => onView(a)}
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+            title="View original abstract (version 1)"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onVersions(a)}
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+            title="View version history"
+          >
+            <GitBranch className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onAssign(a)}
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+            title="Assign reviewers"
+          >
+            <UserPlus className="w-4 h-4" />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+});
 
 // ─── Invite Reviewer Modal ─────────────────────────────────────────────────
 
@@ -1132,7 +1226,7 @@ function ViewAbstractModal({
                           {r.review.scores.relevance} · Originality{" "}
                           {r.review.scores.originality} —{" "}
                           <span className="font-bold">
-                            avg {r.review.average.toFixed(2)}
+                            avg {Number(r.review.average).toFixed(2)}
                           </span>
                         </p>
                         {r.review.comment && (
@@ -1196,6 +1290,7 @@ export default function AbstractManagementPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterSubTheme, setFilterSubTheme] = useState<string>("all");
+  const [filterResubmitted, setFilterResubmitted] = useState<boolean>(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -1265,8 +1360,26 @@ export default function AbstractManagementPage() {
   async function fetchReviewers() {
     try {
       const { data } = await api.get("/abstracts/reviewers");
-      setReviewers(data?.data?.items || data?.data || []);
-    } catch (err) {
+
+      const items =
+        data?.data?.items ??
+        data?.data?.reviewers ??
+        data?.reviewers ??
+        (Array.isArray(data?.data) ? data.data : []);
+
+      setReviewers(Array.isArray(items) ? items : []);
+    } catch (err: any) {
+      console.error(
+        "FAILED TO LOAD REVIEWERS:",
+        err?.response?.status,
+        err?.response?.data || err
+      );
+
+      toast.error(
+        err?.response?.data?.message ||
+          "Failed to load the reviewer pool."
+      );
+
       setReviewers([]);
     }
   }
@@ -1311,7 +1424,7 @@ export default function AbstractManagementPage() {
    * If the fetch fails, we fall back to the row object so the modal still
    * opens on the current version.
    */
-  async function openViewModalAtFirstVersion(row: Abstract) {
+  const openViewModalAtFirstVersion = useCallback(async (row: Abstract) => {
     // Set fallback immediately so the modal opens fast even if the fetch
     // takes a moment.
     setViewingFallback(row);
@@ -1333,17 +1446,33 @@ export default function AbstractManagementPage() {
     } catch {
       // Leave fallback in place; user still sees something useful.
     }
-  }
+  }, []);
 
-  function openViewModalAtVersion(versionId: number) {
+  const openViewModalAtVersion = useCallback((versionId: number) => {
     setViewingFallback(null);
     setViewingVersionId(versionId);
-  }
+  }, []);
 
-  function closeViewModal() {
+  const closeViewModal = useCallback(() => {
     setViewingVersionId(null);
     setViewingFallback(null);
-  }
+  }, []);
+
+  // Stable row callbacks so memoized rows don't re-render unnecessarily.
+  const handleRowView = useCallback(
+    (a: Abstract) => {
+      openViewModalAtFirstVersion(a);
+    },
+    [openViewModalAtFirstVersion],
+  );
+
+  const handleRowVersions = useCallback((a: Abstract) => {
+    setVersionsAbstract(a);
+  }, []);
+
+  const handleRowAssign = useCallback((a: Abstract) => {
+    setAssigningAbstract(a);
+  }, []);
 
   const handlePageChange = (page: number) => setCurrentPage(page);
   const handleItemsPerPageChange = (limit: number) => {
@@ -1358,6 +1487,16 @@ export default function AbstractManagementPage() {
     setFilterSubTheme(value);
     setCurrentPage(1);
   };
+
+  // Client-side filter: when active, only show abstracts that have been
+  // resubmitted at least once (version > 1).
+  const visibleAbstracts = useMemo(() => {
+    if (!filterResubmitted) return abstracts;
+    return abstracts.filter((a) => (a.version ?? 1) > 1);
+  }, [abstracts, filterResubmitted]);
+
+  // Only mount the view modal when there's actually something to show.
+  const showViewModal = viewingVersionId != null || viewingFallback != null;
 
   return (
     <Layout>
@@ -1478,10 +1617,37 @@ export default function AbstractManagementPage() {
               </option>
             ))}
           </select>
+
+          {/* Resubmitted-only toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setFilterResubmitted((v) => !v);
+              setCurrentPage(1);
+            }}
+            title="Show only abstracts with more than one version"
+            className={`h-14 rounded-2xl border-2 px-4 text-sm font-bold inline-flex items-center gap-2 transition-colors shrink-0 ${
+              filterResubmitted
+                ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            <GitBranch className="w-4 h-4" />
+            Resubmitted only
+            {filterResubmitted && (
+              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-indigo-600 text-white text-[10px] font-bold">
+                {visibleAbstracts.length}
+              </span>
+            )}
+          </button>
         </div>
         <div className="mt-3 text-sm text-gray-500">
           {loading
             ? "Loading..."
+            : filterResubmitted
+            ? `${visibleAbstracts.length} resubmitted abstract${
+                visibleAbstracts.length === 1 ? "" : "s"
+              } on this page (${totalItems} total)`
             : `${totalItems} abstract${totalItems === 1 ? "" : "s"}`}
         </div>
       </div>
@@ -1491,9 +1657,11 @@ export default function AbstractManagementPage() {
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-10 h-10 animate-spin text-teal-600" />
         </div>
-      ) : abstracts.length === 0 ? (
+      ) : visibleAbstracts.length === 0 ? (
         <div className="rounded-3xl bg-white border-2 border-gray-100 shadow-xl p-20 text-center text-gray-500">
-          No abstracts match the current filters.
+          {filterResubmitted
+            ? "No resubmitted abstracts on this page. Try a different page or turn off the filter."
+            : "No abstracts match the current filters."}
         </div>
       ) : (
         <div className="rounded-3xl bg-white border-2 border-gray-100 shadow-xl overflow-hidden">
@@ -1512,90 +1680,15 @@ export default function AbstractManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {abstracts.map((a) => {
-                  const { total, done } = reviewTally(a);
-                  const hasMultipleVersions = (a.version ?? 1) > 1;
-
-                  return (
-                    <tr key={a.id} className="hover:bg-gray-50 align-top">
-                      <td className="px-5 py-4 font-mono text-xs text-gray-500">
-                        {a.reference}
-                      </td>
-                      <td className="px-5 py-4 max-w-md">
-                        <p className="font-semibold text-gray-900 leading-snug break-words whitespace-normal">
-                          {a.title}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {formatDate(a.submittedAt)}
-                        </p>
-                      </td>
-                      <td className="px-5 py-4 text-xs text-gray-600 max-w-[180px]">
-                        {subThemeLabel(a.subTheme)}
-                      </td>
-                      <td className="px-5 py-4">
-                        <StatusBadge status={a.status} />
-                      </td>
-                      <td className="px-5 py-4">
-                        <button
-                          type="button"
-                          onClick={() => setVersionsAbstract(a)}
-                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold transition-colors ${
-                            hasMultipleVersions
-                              ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-                              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                          }`}
-                          title="View version history"
-                        >
-                          <GitBranch className="w-3 h-3" />
-                          v{a.version ?? 1}
-                        </button>
-                      </td>
-                      <td className="px-5 py-4">
-                        {a.averageScore != null ? (
-                          <span className="inline-flex items-center gap-1 font-semibold text-gray-900">
-                            <Star className="w-3.5 h-3.5 text-amber-500" />
-                            {Number(a.averageScore).toFixed(2)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">&mdash;</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-4">
-                        <ReviewProgressPill total={total} done={done} compact />
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* View → opens ORIGINAL (v1) version */}
-                          <button
-                            onClick={() => openViewModalAtFirstVersion(a)}
-                            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
-                            title="View original abstract (version 1)"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-
-                          {/* Version history → opens modal, original first */}
-                          <button
-                            onClick={() => setVersionsAbstract(a)}
-                            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
-                            title="View version history"
-                          >
-                            <GitBranch className="w-4 h-4" />
-                          </button>
-
-                          {/* Assign reviewers */}
-                          <button
-                            onClick={() => setAssigningAbstract(a)}
-                            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
-                            title="Assign reviewers"
-                          >
-                            <UserPlus className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {visibleAbstracts.map((a) => (
+                  <AbstractRow
+                    key={a.id}
+                    a={a}
+                    onView={handleRowView}
+                    onVersions={handleRowVersions}
+                    onAssign={handleRowAssign}
+                  />
+                ))}
               </tbody>
             </table>
           </div>
@@ -1629,12 +1722,14 @@ export default function AbstractManagementPage() {
         onAssigned={() => fetchAbstracts(currentPage, itemsPerPage)}
       />
 
-      <ViewAbstractModal
-        versionId={viewingVersionId}
-        fallback={viewingFallback}
-        onClose={closeViewModal}
-        onDecision={handleDecision}
-      />
+      {showViewModal && (
+        <ViewAbstractModal
+          versionId={viewingVersionId}
+          fallback={viewingFallback}
+          onClose={closeViewModal}
+          onDecision={handleDecision}
+        />
+      )}
 
       <VersionHistoryModal
         abstract={versionsAbstract}

@@ -1005,7 +1005,13 @@ export default function ReviewerDashboardPage() {
                     {a.title}
                   </h3>
 
-                  
+                  {/* Inside the mapped card — right after the title */}
+{a.reviewers[0]?.isResubmissionReview && (
+  <div className="inline-flex items-center gap-1 text-xs font-bold uppercase text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full mb-2">
+    <RefreshCw className="w-3 h-3" />
+    Resubmission · v{a.version}
+  </div>
+)}
                 </div>
                 <button
                   onClick={() => setViewing(a)}
@@ -1025,7 +1031,8 @@ export default function ReviewerDashboardPage() {
                   </span>
                   <span className="text-base font-bold text-teal-900 inline-flex items-center gap-1">
                     <Star className="w-4 h-4 fill-current" />
-                    {mine.review.average.toFixed(2)}
+                    {/* {mine.review?.average?.toFixed(2)} */}
+                    {Number(mine.review?.average ?? 0).toFixed(2)}
                   </span>
                 </div>
               ) : (
