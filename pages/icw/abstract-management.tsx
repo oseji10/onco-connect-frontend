@@ -1318,6 +1318,7 @@ export default function AbstractManagementPage() {
         setLoading(true);
         const params = new URLSearchParams();
         params.append("perPage", limit.toString());
+        params.append("page", page.toString());
 
         if (debouncedSearch.trim()) {
           params.append("search", debouncedSearch.trim());
@@ -1325,6 +1326,11 @@ export default function AbstractManagementPage() {
         if (filterStatus !== "all") params.append("status", filterStatus);
         if (filterSubTheme !== "all")
           params.append("subTheme", filterSubTheme);
+        // Filtering to resubmitted-only abstracts happens on the
+        // backend (before pagination) so the count and page navigation
+        // reflect the whole filtered dataset, not just whatever landed
+        // on the currently loaded page.
+        if (filterResubmitted) params.append("resubmittedOnly", "1");
 
         const { data } = await api.get(`/abstracts?${params.toString()}`);
         const responseData = data?.data;
@@ -1342,7 +1348,7 @@ export default function AbstractManagementPage() {
         setLoading(false);
       }
     },
-    [debouncedSearch, filterStatus, filterSubTheme],
+    [debouncedSearch, filterStatus, filterSubTheme, filterResubmitted],
   );
 
   useEffect(() => {
@@ -1487,13 +1493,16 @@ export default function AbstractManagementPage() {
     setFilterSubTheme(value);
     setCurrentPage(1);
   };
+  const handleResubmittedToggle = () => {
+    setFilterResubmitted((v) => !v);
+    setCurrentPage(1);
+  };
 
-  // Client-side filter: when active, only show abstracts that have been
-  // resubmitted at least once (version > 1).
-  const visibleAbstracts = useMemo(() => {
-    if (!filterResubmitted) return abstracts;
-    return abstracts.filter((a) => (a.version ?? 1) > 1);
-  }, [abstracts, filterResubmitted]);
+  // The backend already returns exactly the abstracts that match the
+  // current filters (including resubmittedOnly), one row per abstract,
+  // for the requested page — so what comes back is what's shown, no
+  // further client-side filtering needed.
+  const visibleAbstracts = abstracts;
 
   // Only mount the view modal when there's actually something to show.
   const showViewModal = viewingVersionId != null || viewingFallback != null;
@@ -1621,10 +1630,7 @@ export default function AbstractManagementPage() {
           {/* Resubmitted-only toggle */}
           <button
             type="button"
-            onClick={() => {
-              setFilterResubmitted((v) => !v);
-              setCurrentPage(1);
-            }}
+            onClick={handleResubmittedToggle}
             title="Show only abstracts with more than one version"
             className={`h-14 rounded-2xl border-2 px-4 text-sm font-bold inline-flex items-center gap-2 transition-colors shrink-0 ${
               filterResubmitted
@@ -1636,7 +1642,7 @@ export default function AbstractManagementPage() {
             Resubmitted only
             {filterResubmitted && (
               <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-indigo-600 text-white text-[10px] font-bold">
-                {visibleAbstracts.length}
+                {totalItems}
               </span>
             )}
           </button>
@@ -1645,9 +1651,9 @@ export default function AbstractManagementPage() {
           {loading
             ? "Loading..."
             : filterResubmitted
-            ? `${visibleAbstracts.length} resubmitted abstract${
-                visibleAbstracts.length === 1 ? "" : "s"
-              } on this page (${totalItems} total)`
+            ? `${totalItems} resubmitted abstract${
+                totalItems === 1 ? "" : "s"
+              }`
             : `${totalItems} abstract${totalItems === 1 ? "" : "s"}`}
         </div>
       </div>
@@ -1660,7 +1666,7 @@ export default function AbstractManagementPage() {
       ) : visibleAbstracts.length === 0 ? (
         <div className="rounded-3xl bg-white border-2 border-gray-100 shadow-xl p-20 text-center text-gray-500">
           {filterResubmitted
-            ? "No resubmitted abstracts on this page. Try a different page or turn off the filter."
+            ? "No resubmitted abstracts found. Turn off the filter to see all abstracts."
             : "No abstracts match the current filters."}
         </div>
       ) : (
