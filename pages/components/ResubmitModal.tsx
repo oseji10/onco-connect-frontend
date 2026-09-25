@@ -139,6 +139,7 @@ export default function ResubmitModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
+              readOnly
             />
           </div>
 
