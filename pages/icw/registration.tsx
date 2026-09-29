@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Monitor,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -114,6 +115,8 @@ type ParticipantGroup = {
   representative: Participant;
 };
 
+type TypeFilter = "all" | "Physical" | "Virtual";
+
 // ─── Constants (page-specific) ─────────────────────────────────────────────
 
 const EMPTY_FORM: FormData = {
@@ -168,6 +171,72 @@ function FieldError({ message }: { message?: string }) {
       <AlertCircle className="w-3 h-3 shrink-0" />
       {message}
     </p>
+  );
+}
+
+// ─── Stat Card ─────────────────────────────────────────────────────────────
+
+function StatCard({
+  label,
+  value,
+  percent,
+  icon,
+  color,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  percent?: number;
+  icon: React.ReactNode;
+  color: "green" | "blue" | "purple";
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const colors = {
+    green: {
+      iconBg: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+      bar: "bg-green-600",
+      ring: "border-green-500",
+    },
+    blue: {
+      iconBg: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+      bar: "bg-blue-600",
+      ring: "border-blue-500",
+    },
+    purple: {
+      iconBg: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+      bar: "bg-purple-600",
+      ring: "border-purple-500",
+    },
+  }[color];
+
+  const Wrapper: any = onClick ? "button" : "div";
+
+  return (
+    <Wrapper
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      className={`text-left rounded-3xl bg-white dark:bg-gray-800 border-2 shadow-lg p-5 transition-all ${
+        active ? colors.ring : "border-gray-100 dark:border-gray-700"
+      } ${onClick ? "hover:shadow-xl cursor-pointer" : ""}`}
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
+          <p className="mt-1 text-3xl font-extrabold text-gray-900 dark:text-white">{value}</p>
+        </div>
+        <div className={`p-3 rounded-2xl ${colors.iconBg}`}>{icon}</div>
+      </div>
+      {percent !== undefined && (
+        <div className="mt-4">
+          <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+            <div className={`h-full ${colors.bar} transition-all duration-500`} style={{ width: `${percent}%` }} />
+          </div>
+          <p className="mt-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400">{percent}% of total</p>
+        </div>
+      )}
+    </Wrapper>
   );
 }
 
@@ -991,6 +1060,7 @@ export default function RegistrationManagementPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -1063,14 +1133,42 @@ export default function RegistrationManagementPage() {
     return result;
   }, [participants]);
 
-  // ─── Filtering: search by name, phone, uniqueId, category, AND organization ─
+  // ─── Analytics: event-wide totals (ignores search box) ──────────────────
+  const stats = useMemo(() => {
+    const total = participants.length;
+    const physical = participants.filter((p) => p.participationType === "Physical").length;
+    const virtual = participants.filter((p) => p.participationType === "Virtual").length;
+    const pct = (n: number) => (total ? Math.round((n / total) * 100) : 0);
+
+    const categoryCounts = new Map<string, number>();
+    for (const p of participants) {
+      const name = getCategoryDisplayName(p.category);
+      categoryCounts.set(name, (categoryCounts.get(name) || 0) + 1);
+    }
+    const topCategories = [...categoryCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    return {
+      total,
+      physical,
+      virtual,
+      physicalPct: pct(physical),
+      virtualPct: pct(virtual),
+      topCategories,
+    };
+  }, [participants]);
+
+  // ─── Filtering: type filter + search by name, phone, uniqueId, category, organization, email ─
   const filteredGroups = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
-    if (!query) return groupedParticipants;
 
     return groupedParticipants.filter((group) =>
-      group.participants.some(
-        (p) =>
+      group.participants.some((p) => {
+        if (typeFilter !== "all" && p.participationType !== typeFilter) return false;
+        if (!query) return true;
+
+        return (
           p.fullName.toLowerCase().includes(query) ||
           p.phoneNumber.includes(query) ||
           (p.phoneCountryCode && `${p.phoneCountryCode}${p.phoneNumber}`.includes(query)) ||
@@ -1079,9 +1177,10 @@ export default function RegistrationManagementPage() {
           getCategoryDisplayName(p.category).toLowerCase().includes(query) ||
           p.organizationName?.toLowerCase().includes(query) ||
           p.email?.toLowerCase().includes(query)
-      )
+        );
+      })
     );
-  }, [groupedParticipants, searchQuery]);
+  }, [groupedParticipants, searchQuery, typeFilter]);
 
   // ─── Pagination on groups ────────────────────────────────────────────────
   const paginatedGroups = useMemo(() => {
@@ -1233,6 +1332,11 @@ export default function RegistrationManagementPage() {
 
   function openViewModal(participant: Participant) {
     setViewingParticipant(participant);
+  }
+
+  function selectTypeFilter(next: TypeFilter) {
+    setTypeFilter(next);
+    setCurrentPage(1);
   }
 
   // Render a single participant row
@@ -1401,6 +1505,64 @@ export default function RegistrationManagementPage() {
         </div>
       </div>
 
+      {/* Analytics */}
+      {!loading && (
+        <div className="mb-8 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <StatCard
+              label="Total Registrations"
+              value={stats.total}
+              icon={<Users className="w-6 h-6" />}
+              color="green"
+              active={typeFilter === "all"}
+              onClick={() => selectTypeFilter("all")}
+            />
+            <StatCard
+              label="In-Person"
+              value={stats.physical}
+              percent={stats.physicalPct}
+              icon={<MapPin className="w-6 h-6" />}
+              color="blue"
+              active={typeFilter === "Physical"}
+              onClick={() => selectTypeFilter(typeFilter === "Physical" ? "all" : "Physical")}
+            />
+            <StatCard
+              label="Virtual"
+              value={stats.virtual}
+              percent={stats.virtualPct}
+              icon={<Monitor className="w-6 h-6" />}
+              color="purple"
+              active={typeFilter === "Virtual"}
+              onClick={() => selectTypeFilter(typeFilter === "Virtual" ? "all" : "Virtual")}
+            />
+          </div>
+
+          {stats.topCategories.length > 0 && (
+            <div className="rounded-3xl bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 shadow-lg p-5">
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+                Top Categories
+              </p>
+              <div className="space-y-2.5">
+                {stats.topCategories.map(([name, count]) => (
+                  <div key={name} className="flex items-center gap-3">
+                    <span className="w-48 shrink-0 truncate text-xs font-semibold uppercase text-gray-700 dark:text-gray-300">
+                      {name}
+                    </span>
+                    <div className="flex-1 h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                      <div
+                        className="h-full bg-green-600 rounded-full transition-all duration-500"
+                        style={{ width: `${(count / stats.total) * 100}%` }}
+                      />
+                    </div>
+                    <span className="w-8 text-right text-sm font-bold text-gray-900 dark:text-white">{count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Search */}
       <div className="rounded-3xl bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 shadow-xl p-6 mb-8">
         <div className="relative">
@@ -1425,7 +1587,7 @@ export default function RegistrationManagementPage() {
             </button>
           )}
         </div>
-        <div className="mt-3 flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
           {loading ? (
             "Loading..."
           ) : (
@@ -1434,6 +1596,14 @@ export default function RegistrationManagementPage() {
                 {filteredGroups.length} group{filteredGroups.length === 1 ? "" : "s"} •{" "}
                 {totalParticipants} participant{totalParticipants === 1 ? "" : "s"}
               </span>
+              {typeFilter !== "all" && (
+                <button
+                  onClick={() => selectTypeFilter("all")}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-bold"
+                >
+                  {typeFilter === "Physical" ? "In-Person" : "Virtual"} only <X className="w-3 h-3" />
+                </button>
+              )}
               {duplicateGroupCount > 0 && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-bold">
                   <Copy className="w-3 h-3" />
@@ -1475,9 +1645,11 @@ export default function RegistrationManagementPage() {
                   <td colSpan={9} className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                     <Users className="w-12 h-12 mx-auto text-gray-400" />
                     <p className="mt-4 font-semibold">
-                      {searchQuery ? "No matching participants found" : "No participants registered yet"}
+                      {searchQuery || typeFilter !== "all"
+                        ? "No matching participants found"
+                        : "No participants registered yet"}
                     </p>
-                    {!searchQuery && (
+                    {!searchQuery && typeFilter === "all" && (
                       <Button
                         className="mt-4 rounded-2xl h-11 bg-gradient-to-r from-green-600 to-emerald-600 border-0"
                         onClick={() => setIsModalOpen(true)}
