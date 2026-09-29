@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   Trophy,
@@ -18,6 +18,8 @@ import {
   Megaphone,
   FileDown,
   Download,
+  Paperclip,
+  FileText,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -734,6 +736,8 @@ const BUCKET_TABS: { key: BucketKey; label: string; icon: React.ReactNode }[] = 
 //    table, regardless of which bucket each one is in.
 // Either way this hits the same /abstracts/notifications/custom endpoint
 // and never touches the automated decision emails or decision_notified_at.
+// Optional file attachments are sent as multipart/form-data and attached
+// to every outgoing email.
 
 type MessageCategory = "oral" | "poster" | "pending" | "rejected" | "all";
 
@@ -744,6 +748,18 @@ const MESSAGE_CATEGORIES: { value: MessageCategory; label: string }[] = [
   { value: "rejected", label: "Rejected" },
   { value: "all", label: "Everyone" },
 ];
+
+// Keep these in sync with the validation rules in
+// AbstractRankingController::sendCustom.
+const MAX_FILES = 5;
+const MAX_FILE_MB = 10;
+const ACCEPTED_TYPES = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.zip";
+
+function formatBytes(n: number) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function CustomMessageModal({
   isOpen,
@@ -763,19 +779,45 @@ function CustomMessageModal({
   const [category, setCategory] = useState<MessageCategory>("oral");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       setSubject("");
       setMessage("");
       setCategory("oral");
+      setFiles([]);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const recipientCount = mode === "selected" ? selectedIds.length : recipientCounts[category] ?? 0;
+
+  function handleFilesPicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = ""; // allow re-picking the same file later
+    const next = [...files];
+    for (const f of picked) {
+      if (f.size > MAX_FILE_MB * 1024 * 1024) {
+        toast.error(`${f.name} is larger than ${MAX_FILE_MB} MB.`);
+        continue;
+      }
+      if (next.some((x) => x.name === f.name && x.size === f.size)) continue;
+      if (next.length >= MAX_FILES) {
+        toast.error(`You can attach up to ${MAX_FILES} files.`);
+        break;
+      }
+      next.push(f);
+    }
+    setFiles(next);
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  }
 
   async function handleSend() {
     if (!subject.trim() || !message.trim()) {
@@ -784,11 +826,20 @@ function CustomMessageModal({
     }
     try {
       setSubmitting(true);
-      const payload =
-        mode === "selected"
-          ? { abstractIds: selectedIds, subject: subject.trim(), message: message.trim() }
-          : { category, subject: subject.trim(), message: message.trim() };
-      const { data } = await api.post("/abstracts/notifications/custom", payload);
+
+      const form = new FormData();
+      form.append("subject", subject.trim());
+      form.append("message", message.trim());
+      if (mode === "selected") {
+        selectedIds.forEach((id) => form.append("abstractIds[]", String(id)));
+      } else {
+        form.append("category", category);
+      }
+      files.forEach((f) => form.append("attachments[]", f));
+
+      const { data } = await api.post("/abstracts/notifications/custom", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       toast.success(data?.message || "Message sent.");
       onSent();
       onClose();
@@ -801,7 +852,7 @@ function CustomMessageModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-gray-100">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white shadow-2xl border border-gray-100">
         <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-teal-50 to-emerald-50 flex items-start justify-between">
           <div>
             <h3 className="text-lg font-bold text-gray-900 inline-flex items-center gap-2">
@@ -858,6 +909,61 @@ function CustomMessageModal({
             />
           </div>
 
+          <div>
+            <label className="text-xs font-bold uppercase text-gray-500 mb-1 block">
+              Attachments{" "}
+              <span className="normal-case font-medium text-gray-400">
+                (optional · up to {MAX_FILES} files, {MAX_FILE_MB} MB each)
+              </span>
+            </label>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ACCEPTED_TYPES}
+              onChange={handleFilesPicked}
+              className="hidden"
+            />
+            <Button
+              variant="outline"
+              className="rounded-2xl h-10 px-4 text-xs"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={submitting || files.length >= MAX_FILES}
+            >
+              <span className="inline-flex items-center gap-2">
+                <Paperclip className="w-4 h-4" />
+                Attach files
+              </span>
+            </Button>
+
+            {files.length > 0 && (
+              <ul className="mt-3 space-y-2">
+                {files.map((f, i) => (
+                  <li
+                    key={`${f.name}-${f.size}`}
+                    className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2"
+                  >
+                    <span className="inline-flex items-center gap-2 min-w-0">
+                      <FileText className="w-4 h-4 text-teal-700 shrink-0" />
+                      <span className="text-sm font-semibold text-gray-900 truncate">{f.name}</span>
+                      <span className="text-xs text-gray-400 shrink-0">{formatBytes(f.size)}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(i)}
+                      disabled={submitting}
+                      className="text-gray-400 hover:text-gray-700 shrink-0"
+                      aria-label={`Remove ${f.name}`}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           <p className="text-xs text-gray-400">
             This will send to <span className="font-bold text-gray-600">{recipientCount}</span> recipient(s).
             It won't change any abstract's status or presentation type.
@@ -875,7 +981,11 @@ function CustomMessageModal({
           >
             <span className="inline-flex items-center gap-2">
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              {submitting ? "Sending..." : `Send to ${recipientCount}`}
+              {submitting
+                ? "Sending..."
+                : `Send to ${recipientCount}${
+                    files.length ? ` (+${files.length} file${files.length > 1 ? "s" : ""})` : ""
+                  }`}
             </span>
           </Button>
         </div>
