@@ -59,7 +59,7 @@ export default function ForgotPasswordPage() {
   // Go back to login shortly after a successful reset
   useEffect(() => {
     if (step !== "done") return;
-    const t = setTimeout(() => router.push("/login"), 2500);
+    const t = setTimeout(() => router.push("/"), 2500);
     return () => clearTimeout(t);
   }, [step, router]);
 
