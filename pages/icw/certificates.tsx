@@ -67,10 +67,10 @@ const ITEMS_PER_PAGE = 10;
 // backend receives, `label` is the full title, `short` is used for table chips.
 const CERTIFICATE_TYPES = [
   { key: "attendance", label: "Certificate of Attendance", short: "Attendance" },
-  { key: "participation", label: "Certificate of Participation", short: "Participation" },
-  { key: "speaker", label: "Speaker Certificate", short: "Speaker" },
-  { key: "facilitator", label: "Facilitator Certificate", short: "Facilitator" },
-  { key: "exhibitor", label: "Exhibitor Certificate", short: "Exhibitor" },
+  { key: "oral", label: "Oral Certificate", short: "Oral" },
+  { key: "poster", label: "Poster Certificate", short: "Poster" },
+  // { key: "facilitator", label: "Facilitator Certificate", short: "Facilitator" },
+  // { key: "exhibitor", label: "Exhibitor Certificate", short: "Exhibitor" },
 ] as const;
 
 const DEFAULT_TYPE = CERTIFICATE_TYPES[0].key;
