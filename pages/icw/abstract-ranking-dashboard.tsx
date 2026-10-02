@@ -27,7 +27,7 @@ import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
 import { Abstract, SUB_THEMES, formatDate } from "../../types/abstract-type";
-
+import { downloadAbstractBook } from "../../lib/abstractWordExport";
 // ─── Types for this page's API responses ───────────────────────────────────
 
 type BucketKey = "top30" | "subThemeTop5" | "posters" | "pending";
@@ -1011,6 +1011,9 @@ export default function AbstractRankingsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
+  const [exportingWord, setExportingWord] = useState(false);
+ 
+
   // Cross-tab selection: an admin can check a couple of oral presenters
   // and a couple of pending abstracts and message all of them at once.
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -1146,6 +1149,25 @@ export default function AbstractRankingsPage() {
     all: (data?.counts?.top30 ?? 0) + (data?.counts?.subThemeTop5 ?? 0) + (data?.counts?.posters ?? 0) + (data?.counts?.pending ?? 0),
   };
 
+
+async function handleExportWord() {
+  if (!data) return;
+  try {
+    setExportingWord(true);
+    const count = await downloadAbstractBook(data);
+    if (count === 0) {
+      toast.error("No ranked abstracts to export yet.");
+    } else {
+      toast.success(`Word document downloaded (${count} abstract${count === 1 ? "" : "s"}).`);
+    }
+  } catch (err) {
+    console.error(err);
+    toast.error("Failed to generate the Word document.");
+  } finally {
+    setExportingWord(false);
+  }
+}
+
   return (
     <Layout>
       <div className="mb-6 sm:mb-8">
@@ -1170,6 +1192,19 @@ export default function AbstractRankingsPage() {
                 Export All
               </span>
             </Button>
+
+            <Button
+  variant="outline"
+  className="rounded-2xl h-12 px-5 border-2"
+  onClick={handleExportWord}
+  disabled={!data || exportingWord}
+>
+  <span className="inline-flex items-center gap-2 font-bold">
+    {exportingWord ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
+    {exportingWord ? "Preparing..." : "Export Word"}
+  </span>
+</Button>
+
             <Button
               variant="outline"
               className="rounded-2xl h-12 px-5 border-2"

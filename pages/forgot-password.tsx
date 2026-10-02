@@ -377,7 +377,7 @@ export default function ForgotPasswordPage() {
                     <Button
                       className={`${buttonClass} mt-6`}
                       block
-                      onClick={() => router.push("/login")}
+                      onClick={() => router.push("/")}
                     >
                       Go to sign in
                     </Button>
@@ -388,7 +388,7 @@ export default function ForgotPasswordPage() {
                 {step !== "done" && (
                   <div className="mt-6 pt-5 border-t border-gray-200 dark:border-gray-700 text-center md:text-left">
                     <Link
-                      href="/login"
+                      href="/"
                       className="inline-flex items-center gap-2 text-sm font-medium text-[#1F6F43] hover:underline"
                     >
                       <ArrowLeft className="w-4 h-4" />

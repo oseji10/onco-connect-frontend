@@ -187,6 +187,14 @@ const routes: IRoute[] = [
   name: "My Abstracts",
   menuKey: "author-dashboard",
 },
+
+  {
+  path: "/icw/author-dashboard",
+  icon: FileBadge,
+  name: "Meal Scan",
+  menuKey: "scanner",
+},
+
 ];
 
 export default routes;

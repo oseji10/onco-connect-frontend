@@ -29,12 +29,13 @@ export const ROLE_MENU_ACCESS: Record<IcwRole, string[] | "*"> = {
     "speakers",
     "incident-report",
     "abstract-ranking-dashboard",
+    "scanner"
     // "users",
     // deliberately no "users" — admin cannot see the Add User menu
   ],
   reviewer: ["abstract-review","abstract-reviewer-dashboard"],
   author: ["author-dashboard"],
-  registration_desk_officer: ["registration", "accreditation"],
+  registration_desk_officer: ["registration", "accreditation", "scanner"],
   // Participants use a separate, narrower participant portal (manage own
   // registration, view speakers, download own certificate) rather than
   // this staff sidebar, so nothing here maps to that admin menu set.
