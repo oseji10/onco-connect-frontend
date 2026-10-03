@@ -189,10 +189,17 @@ const routes: IRoute[] = [
 },
 
   {
-  path: "/icw/author-dashboard",
+  path: "/icw/meal-session",
+  icon: FileBadge,
+  name: "Meal Management",
+  menuKey: "meal-session",
+},
+
+{
+  path: "/icw/scanner2",
   icon: FileBadge,
   name: "Meal Scan",
-  menuKey: "scanner",
+  menuKey: "scanner2",
 },
 
 ];

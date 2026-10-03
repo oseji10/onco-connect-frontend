@@ -1154,7 +1154,11 @@ async function handleExportWord() {
   if (!data) return;
   try {
     setExportingWord(true);
-    const count = await downloadAbstractBook(data);
+    const count = await downloadAbstractBook(data, {
+      subThemeLabel,                                   // already defined in this file
+      subThemeOrder: SUB_THEMES.map((s) => s.value),   // SUB_THEMES is already imported
+      title: "ICW 2026 Abstract Book",                 // cover page title — change freely
+    });
     if (count === 0) {
       toast.error("No ranked abstracts to export yet.");
     } else {
@@ -1193,7 +1197,7 @@ async function handleExportWord() {
               </span>
             </Button>
 
-            <Button
+<Button
   variant="outline"
   className="rounded-2xl h-12 px-5 border-2"
   onClick={handleExportWord}
