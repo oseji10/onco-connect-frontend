@@ -1,6 +1,7 @@
-import React, { FormEvent, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 import { Button } from "@roketid/windmill-react-ui";
-import { CheckCircle2, Clock, Loader2, Lock, BadgeCheck, Star } from "lucide-react";
+import { CheckCircle2, Clock, Loader2, Lock, BadgeCheck, ClipboardList, Download, Circle } from "lucide-react";
 import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
@@ -21,7 +22,8 @@ type SessionItem = {
 type AttendanceData = {
   fullName: string;
   isAccredited: boolean;
-  feedbackSubmitted: boolean;
+  feedbackSubmitted: boolean; // = questionnaire submitted
+  questionnaireOpen: boolean;
   certificateEligible: boolean;
   requiredSessions: number;
   sessions: SessionItem[];
@@ -29,17 +31,46 @@ type AttendanceData = {
 
 type ApiSuccess<T> = { success: true; message: string; data: T };
 
+// Change if your questionnaire page lives at a different route
+const QUESTIONNAIRE_PATH = "/questionnaire";
+
 const fmt = (v: string) => new Date(v).toLocaleString();
 
+async function downloadCertificate() {
+  try {
+    const res = await api.get("/participant/certificate", { responseType: "blob" });
+    const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "certificate.pdf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err: any) {
+    let message = "Could not download your certificate.";
+    try {
+      const text = await err?.response?.data?.text();
+      message = JSON.parse(text).message || message;
+    } catch {}
+    toast.error(message);
+  }
+}
+
+function Step({ done, label }: { done: boolean; label: string }) {
+  return (
+    <li className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+      {done ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-gray-400" />}
+      <span className={done ? "line-through opacity-70" : ""}>{label}</span>
+    </li>
+  );
+}
+
 export default function MyAttendancePage() {
+  const router = useRouter();
   const [data, setData] = useState<AttendanceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkingIn, setCheckingIn] = useState<number | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  const [rating, setRating] = useState(0);
-  const [takeaway, setTakeaway] = useState("");
-  const [comments, setComments] = useState("");
 
   async function load() {
     try {
@@ -72,29 +103,6 @@ export default function MyAttendancePage() {
     }
   }
 
-  async function handleFeedback(e: FormEvent) {
-    e.preventDefault();
-    if (!rating) return toast.error("Please give a rating.");
-    if (takeaway.trim().length < 30) return toast.error("Please write at least 30 characters for your key takeaway.");
-
-    try {
-      setSubmitting(true);
-      const { data: res } = await api.post<ApiSuccess<{ certificateEligible: boolean }>>("/participant/feedback", {
-        rating,
-        takeaway: takeaway.trim(),
-        comments: comments.trim() || null,
-      });
-      toast.success(res.message);
-      await load();
-    } catch (err: any) {
-      const errors = err?.response?.data?.errors;
-      const first = errors && Object.values(errors)[0];
-      toast.error((Array.isArray(first) && first[0]) || err?.response?.data?.message || "Could not submit feedback.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   if (loading) {
     return (
       <Layout>
@@ -115,46 +123,94 @@ export default function MyAttendancePage() {
   }
 
   const attendedCount = data.sessions.filter((s) => s.status === "checked_in").length;
-  const hasPresence = data.isAccredited || attendedCount > 0;
+  const hasPresence = data.isAccredited || attendedCount >= data.requiredSessions;
 
   return (
     <Layout>
       <PageTitle>My Attendance</PageTitle>
 
-      {/* Eligibility banner */}
+      {/* Certificate card */}
       <div
-        className={`mb-8 rounded-3xl border-2 p-6 flex items-start gap-4 ${
+        className={`mb-8 rounded-3xl border-2 p-6 ${
           data.certificateEligible
             ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20"
-            : "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20"
+            : "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
         }`}
       >
-        {data.certificateEligible ? (
-          <BadgeCheck className="w-8 h-8 text-emerald-600 shrink-0" />
-        ) : (
-          <Clock className="w-8 h-8 text-amber-600 shrink-0" />
-        )}
-        <div>
-          <p className="font-bold text-gray-900 dark:text-white uppercase">
-            {data.certificateEligible ? "You are eligible for a certificate" : "Certificate requirements"}
-          </p>
-          {!data.certificateEligible && (
-            <ul className="mt-2 text-sm text-gray-700 dark:text-gray-300 space-y-1">
-              <li>
-                {hasPresence ? "✓" : "○"} Attend: {data.isAccredited ? "accredited at venue" : `check in to ${data.requiredSessions} session(s) (${attendedCount} so far)`}
-              </li>
-              <li>{data.feedbackSubmitted ? "✓" : "○"} Submit the feedback form below</li>
-            </ul>
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-4">
+            {data.certificateEligible ? (
+              <BadgeCheck className="w-9 h-9 text-emerald-600 shrink-0" />
+            ) : (
+              <Lock className="w-9 h-9 text-gray-400 shrink-0" />
+            )}
+            <div>
+              <p className="font-bold text-gray-900 dark:text-white uppercase">
+                {data.certificateEligible ? "Your certificate is ready" : "Certificate locked"}
+              </p>
+              {!data.certificateEligible && (
+                <ul className="mt-3 space-y-1.5">
+                  <Step
+                    done={hasPresence}
+                    label={
+                      data.isAccredited
+                        ? "Attend the conference (accredited at venue)"
+                        : `Attend: check in to ${data.requiredSessions} session(s) (${attendedCount} so far)`
+                    }
+                  />
+                  <Step done={data.feedbackSubmitted} label="Complete the after-event questionnaire" />
+                </ul>
+              )}
+            </div>
+          </div>
+
+          {data.certificateEligible && (
+            <Button
+              onClick={downloadCertificate}
+              className="rounded-2xl h-12 px-6 bg-gradient-to-r from-green-600 to-emerald-600 border-0 shadow-lg"
+            >
+              <span className="inline-flex items-center gap-2 font-bold uppercase">
+                <Download className="w-5 h-5" />
+                Download
+              </span>
+            </Button>
           )}
         </div>
       </div>
 
+      {/* Questionnaire card */}
+      {!data.certificateEligible && (
+        <div className="mb-8 rounded-3xl bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 shadow-lg p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-4">
+            <ClipboardList className="w-7 h-7 text-green-600 shrink-0" />
+            <div>
+              <p className="font-bold text-gray-900 dark:text-white">After-event questionnaire</p>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                {data.feedbackSubmitted
+                  ? "Submitted. Thank you!"
+                  : data.questionnaireOpen
+                    ? "A few quick questions to unlock your certificate."
+                    : "Opens once the conference ends."}
+              </p>
+            </div>
+          </div>
+
+          {data.questionnaireOpen && (
+            <Button
+              onClick={() => router.push(QUESTIONNAIRE_PATH)}
+              className="rounded-2xl h-11 bg-gradient-to-r from-green-600 to-emerald-600 border-0"
+            >
+              <span className="font-bold uppercase">{data.feedbackSubmitted ? "Review answers" : "Start"}</span>
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Sessions */}
       <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Sessions</h3>
       <div className="space-y-3 mb-10">
-        {data.sessions.length === 0 && (
-          <p className="text-sm text-gray-500">No sessions have been scheduled yet.</p>
-        )}
+        {data.sessions.length === 0 && <p className="text-sm text-gray-500">No sessions have been scheduled yet.</p>}
+
         {data.sessions.map((s) => (
           <div
             key={s.sessionId}
@@ -184,82 +240,12 @@ export default function MyAttendancePage() {
               </Button>
             ) : (
               <span className="inline-flex items-center gap-2 text-gray-500 text-sm font-semibold uppercase">
-                <Lock className="w-4 h-4" />
+                {s.status === "upcoming" ? <Clock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                 {s.status === "upcoming" ? "Not open yet" : "Closed"}
               </span>
             )}
           </div>
         ))}
-      </div>
-
-      {/* Feedback */}
-      <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Feedback</h3>
-      <div className="rounded-3xl bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 shadow-xl p-6 sm:p-8">
-        {!hasPresence ? (
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Check in to at least one session to unlock the feedback form.
-          </p>
-        ) : (
-          <form onSubmit={handleFeedback} className="space-y-6">
-            {data.feedbackSubmitted && (
-              <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-                ✓ Feedback already submitted. You can update it below.
-              </p>
-            )}
-
-            <div>
-              <label className="block mb-3 text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
-                Overall rating <span className="text-red-500">*</span>
-              </label>
-              <div className="flex gap-2">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button key={n} type="button" onClick={() => setRating(n)} aria-label={`${n} stars`}>
-                    <Star
-                      className={`w-8 h-8 transition-colors ${
-                        n <= rating ? "text-amber-400 fill-amber-400" : "text-gray-300 dark:text-gray-600"
-                      }`}
-                    />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block mb-2 text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
-                Your key takeaway <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                className="w-full h-28 rounded-2xl border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-3 text-sm focus:border-green-500 focus:ring-green-500 resize-none"
-                placeholder="What is the most useful thing you learned from the conference? (min. 30 characters)"
-                value={takeaway}
-                onChange={(e) => setTakeaway(e.target.value)}
-              />
-              <p className="mt-1 text-xs text-gray-500">{takeaway.trim().length}/30 minimum</p>
-            </div>
-
-            <div>
-              <label className="block mb-2 text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
-                Other comments <span className="text-gray-400 text-xs normal-case font-normal">(optional)</span>
-              </label>
-              <textarea
-                className="w-full h-24 rounded-2xl border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-3 text-sm focus:border-green-500 focus:ring-green-500 resize-none"
-                value={comments}
-                onChange={(e) => setComments(e.target.value)}
-              />
-            </div>
-
-            <Button
-              type="submit"
-              disabled={submitting}
-              className="rounded-2xl h-12 bg-gradient-to-r from-green-600 to-emerald-600 border-0"
-            >
-              <span className="inline-flex items-center gap-2 font-bold uppercase">
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {submitting ? "Submitting..." : data.feedbackSubmitted ? "Update feedback" : "Submit feedback"}
-              </span>
-            </Button>
-          </form>
-        )}
       </div>
 
       <div className="pb-20" />

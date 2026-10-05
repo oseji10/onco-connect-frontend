@@ -11,6 +11,10 @@ import {
   AwardIcon,
   UserCog,
   ClipboardListIcon,
+  ScrollText,
+  Utensils,
+  HandPlatter,
+  BadgeQuestionMark,
 } from "lucide-react";
 import { ComponentType } from "react";
 import { canAccessMenu, IcwRole } from "../lib/permissions";
@@ -183,23 +187,30 @@ const routes: IRoute[] = [
 
   {
   path: "/icw/author-dashboard",
-  icon: FileBadge,
+  icon: ScrollText,
   name: "My Abstracts",
   menuKey: "author-dashboard",
 },
 
   {
   path: "/icw/meal-session",
-  icon: FileBadge,
+  icon: Utensils,
   name: "Meal Management",
   menuKey: "meal-session",
 },
 
 {
   path: "/icw/scanner2",
-  icon: FileBadge,
+  icon: HandPlatter,
   name: "Meal Scan",
   menuKey: "scanner2",
+},
+
+{
+  path: "/icw/questionnaire-admin",
+  icon: BadgeQuestionMark,
+  name: "Questionnaire",
+  menuKey: "questionnaire-admin",
 },
 
 ];

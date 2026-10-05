@@ -271,6 +271,23 @@ export default function CertificateEligibilityPage() {
                           Accredit
                         </button>
                       ) : null}
+
+
+                      <button
+  onClick={async () => {
+    try {
+      const res = await api.get(`/questionnaire/link/${r.attendeeId}`);
+      await navigator.clipboard.writeText(res.data.data.url);
+      toast.success("Link copied. Paste it into WhatsApp or SMS.");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Could not get the link.");
+    }
+  }}
+  className="text-xs font-bold uppercase text-indigo-600 px-3 py-2 rounded-xl hover:bg-indigo-50"
+>
+  Copy link
+</button>
+
                     </td>
                   </tr>
                 ))

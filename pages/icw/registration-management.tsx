@@ -26,17 +26,12 @@ import {
   ChevronRight,
   Copy,
   Monitor,
-  Megaphone
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
-
-
-import SendMessageModal from "../components/SendMessageModal";
-
 import {
   CATEGORY_DISPLAY_NAMES,
   getCategoryBackendValue,
@@ -1075,9 +1070,6 @@ export default function RegistrationManagementPage() {
   const [resendingPass, setResendingPass] = useState<number | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
-  const [isMessageOpen, setIsMessageOpen] = useState(false);
-
-
   async function handleResendPass(participant: Participant) {
     try {
       setResendingPass(participant.attendeeId);
@@ -1497,20 +1489,6 @@ export default function RegistrationManagementPage() {
               View and manage all registered conference participants
             </p>
           </div>
-
-<Button layout="outline" className="rounded-2xl h-12 px-5 border-2" onClick={() => setIsMessageOpen(true)}>
-  <span className="inline-flex items-center gap-2 font-bold">
-    <Megaphone className="w-5 h-5" />
-    Message Participants
-  </span>
-</Button>
-
- <div className="pb-20" />
-<SendMessageModal
-  isOpen={isMessageOpen}
-  onClose={() => setIsMessageOpen(false)}
-  participants={participants}
-/>
 
           <Button
             className="rounded-2xl h-12 px-6 bg-gradient-to-r from-green-600 to-emerald-600 border-0 hover:from-green-700 hover:to-emerald-700 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
