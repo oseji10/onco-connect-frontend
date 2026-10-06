@@ -3,8 +3,8 @@ import { Button } from "@roketid/windmill-react-ui";
 import { Megaphone, Paperclip, FileText, Send, Loader2, X } from "lucide-react";
 import toast from "react-hot-toast";
 
-import api from "../../../lib/api";
-import { CATEGORY_DISPLAY_NAMES, getCategoryBackendValue } from "../../../types/registration-constants";
+import api from "../lib/api";
+import { CATEGORY_DISPLAY_NAMES, getCategoryBackendValue } from "../types/registration-constants";
 
 // Keep in sync with AttendeeMessageController::sendCustom validation.
 const MAX_FILES = 5;

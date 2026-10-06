@@ -15,6 +15,8 @@ import {
   Utensils,
   HandPlatter,
   BadgeQuestionMark,
+  PrinterCheck,
+  Gem,
 } from "lucide-react";
 import { ComponentType } from "react";
 import { canAccessMenu, IcwRole } from "../lib/permissions";
@@ -211,6 +213,20 @@ const routes: IRoute[] = [
   icon: BadgeQuestionMark,
   name: "Questionnaire",
   menuKey: "questionnaire-admin",
+},
+
+{
+  path: "/icw/vips",
+  icon: Gem,
+  name: "VIPs",
+  menuKey: "vips",
+},
+
+{
+  path: "/icw/print-passes",
+  icon: PrinterCheck,
+  name: "Print Passes",
+  menuKey: "print-passes",
 },
 
 ];

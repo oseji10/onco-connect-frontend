@@ -3,7 +3,7 @@ import { Button } from "@roketid/windmill-react-ui";
 import { Star, Loader2, Lock, BadgeCheck, Clock, Download, AlertCircle } from "lucide-react";
 import toast from "react-hot-toast";
 
-import api from "../../lib/api";
+import api from "../lib/api";
 
 export type QType = "rating" | "single_choice" | "multi_choice" | "text";
 

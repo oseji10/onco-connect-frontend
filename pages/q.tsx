@@ -12,7 +12,7 @@ import Head from "next/head";
 import { Loader2, LinkIcon } from "lucide-react";
 
 import api from "../lib/api";
-import QuestionnaireView, { QuestionnaireData, downloadCertificatePdf } from "./containers/QuestionnaireView";
+import QuestionnaireView, { QuestionnaireData, downloadCertificatePdf } from "../components/QuestionnaireView";
 
 type State = "loading" | "ready" | "invalid";
 

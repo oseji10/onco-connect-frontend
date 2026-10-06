@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
 import api from "../../lib/api";
-import QuestionnaireView, { QuestionnaireData, downloadCertificatePdf } from "../containers/QuestionnaireView";
+import QuestionnaireView, { QuestionnaireData, downloadCertificatePdf } from "../../components/QuestionnaireView";
 
 export default function QuestionnairePage() {
   const [data, setData] = useState<QuestionnaireData | null>(null);

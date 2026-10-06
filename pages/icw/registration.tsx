@@ -26,17 +26,13 @@ import {
   ChevronRight,
   Copy,
   Monitor,
-  Megaphone
+  Printer,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
 import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
-
-
-import SendMessageModal from "../components/SendMessageModal";
-
 import {
   CATEGORY_DISPLAY_NAMES,
   getCategoryBackendValue,
@@ -1073,10 +1069,8 @@ export default function RegistrationManagementPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [viewingParticipant, setViewingParticipant] = useState<Participant | null>(null);
   const [resendingPass, setResendingPass] = useState<number | null>(null);
+  const [printingPass, setPrintingPass] = useState<number | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-
-  const [isMessageOpen, setIsMessageOpen] = useState(false);
-
 
   async function handleResendPass(participant: Participant) {
     try {
@@ -1089,6 +1083,37 @@ export default function RegistrationManagementPage() {
       toast.error(err?.response?.data?.message || "Failed to resend pass. Please try again.");
     } finally {
       setResendingPass(null);
+    }
+  }
+
+  // Download a print-ready badge PDF for ONE person (same layout as Print Passes, one badge)
+  async function handlePrintPass(participant: Participant) {
+    try {
+      setPrintingPass(participant.attendeeId);
+
+      const res = await api.get("/passes/print/download", {
+        params: { type: "all", group: "all", attendeeId: participant.attendeeId, size: 4, batch: 1 },
+        responseType: "blob",
+        timeout: 120000,
+      });
+
+      const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `pass-${participant.uniqueId || participant.attendeeId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      let message = "Could not generate the pass.";
+      try {
+        const text = await err?.response?.data?.text();
+        message = JSON.parse(text).message || message;
+      } catch {}
+      toast.error(message);
+    } finally {
+      setPrintingPass(null);
     }
   }
 
@@ -1117,9 +1142,11 @@ export default function RegistrationManagementPage() {
     for (const p of participants) {
       // Normalize phone key: use country code + phone number
       const phoneKey = p.phoneCountryCode
-        ? `${p.phoneCountryCode}${p.phoneNumber}`
-        : p.phoneNumber;
-      const normalizedKey = phoneKey.replace(/\D/g, ""); // digits only
+        ? `${p.phoneCountryCode}${p.phoneNumber ?? ""}`
+        : p.phoneNumber ?? "";
+      const digits = phoneKey.replace(/\D/g, ""); // digits only
+      // People without a real phone number (e.g. VIPs) must never be grouped together as "duplicates"
+      const normalizedKey = digits.length >= 7 ? digits : `no-phone-${p.attendeeId}`;
 
       if (!groups.has(normalizedKey)) {
         groups.set(normalizedKey, []);
@@ -1178,8 +1205,8 @@ export default function RegistrationManagementPage() {
 
         return (
           p.fullName.toLowerCase().includes(query) ||
-          p.phoneNumber.includes(query) ||
-          (p.phoneCountryCode && `${p.phoneCountryCode}${p.phoneNumber}`.includes(query)) ||
+          (p.phoneNumber ?? "").includes(query) ||
+          (p.phoneCountryCode && `${p.phoneCountryCode}${p.phoneNumber ?? ""}`.includes(query)) ||
           p.uniqueId?.toLowerCase().includes(query) ||
           p.category.toLowerCase().includes(query) ||
           getCategoryDisplayName(p.category).toLowerCase().includes(query) ||
@@ -1443,6 +1470,19 @@ export default function RegistrationManagementPage() {
             </button>
 
             <button
+              onClick={() => handlePrintPass(participant)}
+              disabled={printingPass === participant.attendeeId}
+              className="p-2 rounded-xl text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Print pass"
+            >
+              {printingPass === participant.attendeeId ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Printer className="w-4 h-4" />
+              )}
+            </button>
+
+            <button
               onClick={() => openEditModal(participant)}
               className="p-2 rounded-xl text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
               title="Edit"
@@ -1497,20 +1537,6 @@ export default function RegistrationManagementPage() {
               View and manage all registered conference participants
             </p>
           </div>
-
-<Button layout="outline" className="rounded-2xl h-12 px-5 border-2" onClick={() => setIsMessageOpen(true)}>
-  <span className="inline-flex items-center gap-2 font-bold">
-    <Megaphone className="w-5 h-5" />
-    Message Participants
-  </span>
-</Button>
-
- <div className="pb-20" />
-<SendMessageModal
-  isOpen={isMessageOpen}
-  onClose={() => setIsMessageOpen(false)}
-  participants={participants}
-/>
 
           <Button
             className="rounded-2xl h-12 px-6 bg-gradient-to-r from-green-600 to-emerald-600 border-0 hover:from-green-700 hover:to-emerald-700 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
