@@ -118,6 +118,8 @@ type ParticipantGroup = {
 
 type TypeFilter = "all" | "Physical" | "Virtual";
 
+type PassQr = { qrUrl: string | null; serialNumber: string | null };
+
 // ─── Constants (page-specific) ─────────────────────────────────────────────
 
 const EMPTY_FORM: FormData = {
@@ -408,6 +410,30 @@ function ViewDetailsModal({
   onClose: () => void;
   participant: Participant | null;
 }) {
+
+  const [qr, setQr] = useState<PassQr | null>(null);
+const [qrLoading, setQrLoading] = useState(false);
+const [qrError, setQrError] = useState<string | null>(null);
+
+useEffect(() => {
+  if (!isOpen || !participant) return;
+  let cancelled = false;
+
+  setQr(null);
+  setQrError(null);
+  setQrLoading(true);
+
+  api
+    .get<ApiSuccess<PassQr>>(`/conference/participants/${participant.attendeeId}/qr`)
+    .then((res) => !cancelled && setQr(res.data.data))
+    .catch((err) => !cancelled && setQrError(err?.response?.data?.message || "Could not load QR code."))
+    .finally(() => !cancelled && setQrLoading(false));
+
+  return () => {
+    cancelled = true;
+  };
+}, [isOpen, participant?.attendeeId]);
+
   if (!isOpen || !participant) return null;
 
   const categoryDisplay = getCategoryDisplayName(participant.category);
@@ -462,6 +488,30 @@ function ViewDetailsModal({
               </div>
             </div>
           </div>
+
+<div>
+  <h5 className="text-sm font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">
+    <Hash className="w-4 h-4" />
+    Pass QR Code
+  </h5>
+  <div className="flex flex-col items-center gap-2 rounded-2xl bg-gray-50 dark:bg-gray-700/50 p-5">
+    {qrLoading ? (
+      <Loader2 className="w-8 h-8 animate-spin text-green-600" />
+    ) : qr?.qrUrl ? (
+      <>
+        {/* white background keeps the code scannable in dark mode */}
+        <img
+          src={`${process.env.NEXT_PUBLIC_API_FILE_URL}${qr.qrUrl}`}
+          alt={`QR code for ${participant.fullName}`}
+          className="w-48 h-48 rounded-xl bg-white p-2"
+        />
+        {qr.serialNumber && <p className="font-mono text-xs font-bold text-gray-600 dark:text-gray-300">{qr.serialNumber}</p>}
+      </>
+    ) : (
+      <p className="text-sm font-semibold text-gray-500">{qrError || "No QR code available."}</p>
+    )}
+  </div>
+</div>
 
           <div>
             <h5 className="text-sm font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">

@@ -17,6 +17,7 @@ import {
   BadgeQuestionMark,
   PrinterCheck,
   Gem,
+  SmartphoneNfc,
 } from "lucide-react";
 import { ComponentType } from "react";
 import { canAccessMenu, IcwRole } from "../lib/permissions";
@@ -227,6 +228,12 @@ const routes: IRoute[] = [
   icon: PrinterCheck,
   name: "Print Passes",
   menuKey: "print-passes",
+},
+{
+  path: "/icw/oral-scoring",
+  icon: SmartphoneNfc,
+  name: "Oral Scoring",
+  menuKey: "oral-scoring",
 },
 
 ];

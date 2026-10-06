@@ -1,6 +1,6 @@
-import React, { FormEvent, Fragment, useCallback, useEffect, useState } from "react";
+import React, { FormEvent, useCallback, useEffect, useState } from "react";
 import { Input, Button } from "@roketid/windmill-react-ui";
-import { Crown, Plus, Trash2, Loader2, X, Search, Printer, ChevronDown, ChevronRight, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, Crown, Plus, Trash2, Loader2, X, Search, Printer, Users } from "lucide-react";
 import toast from "react-hot-toast";
 
 import Layout from "../containers/Layout";
@@ -8,22 +8,26 @@ import PageTitle from "../components/Typography/PageTitle";
 import api from "../../lib/api";
 import { TITLES } from "../../types/registration-constants";
 
-type Person = {
+type GuestPass = {
   attendeeId: number;
   fullName: string;
-  organization: string | null;
   uniqueId: string | null;
   serialNumber: string | null;
 };
 
-type Vip = Person & {
+type Vip = {
+  attendeeId: number;
+  fullName: string;
+  organization: string | null;
   guests: number;
-  guestList: Person[];
+  guestPasses: GuestPass[];
+  uniqueId: string | null;
+  serialNumber: string | null;
 };
 
 type ApiSuccess<T> = { success: true; message: string; data: T };
 
-const EMPTY = { title: "", firstName: "", lastName: "", organization: "", guests: 0, guestNames: [] as string[] };
+const EMPTY = { title: "", firstName: "", lastName: "", organization: "", guests: 0 };
 
 export default function VipsPage() {
   const [vips, setVips] = useState<Vip[]>([]);
@@ -34,7 +38,10 @@ export default function VipsPage() {
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState<number | null>(null);
   const [printing, setPrinting] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [guestDraft, setGuestDraft] = useState<Record<number, number>>({});
+  const [updatingGuests, setUpdatingGuests] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -53,27 +60,10 @@ export default function VipsPage() {
 
   const q = search.toLowerCase().trim();
   const shown = q
-    ? vips.filter(
-        (v) =>
-          v.fullName.toLowerCase().includes(q) ||
-          (v.organization || "").toLowerCase().includes(q) ||
-          v.guestList.some((g) => g.fullName.toLowerCase().includes(q))
-      )
+    ? vips.filter((v) => v.fullName.toLowerCase().includes(q) || (v.organization || "").toLowerCase().includes(q))
     : vips;
 
-  function toggle(id: number) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
-
-  // Keep the guest-name inputs in step with the guest count.
-  function setGuestCount(raw: number) {
-    const n = Math.max(0, Math.min(20, Number(raw) || 0));
-    setForm((f) => ({ ...f, guests: n, guestNames: Array.from({ length: n }, (_, i) => f.guestNames[i] || "") }));
-  }
+  const totalPasses = vips.reduce((n, v) => n + 1 + v.guests, 0);
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
@@ -87,8 +77,7 @@ export default function VipsPage() {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
         organization: form.organization.trim() || null,
-        guests: form.guests,
-        guestNames: form.guestNames.map((n) => n.trim()),
+        guests: Number(form.guests) || 0,
       });
       toast.success(res.data.message);
       setForm(EMPTY);
@@ -104,8 +93,8 @@ export default function VipsPage() {
   }
 
   async function handleDelete(v: Vip) {
-    const extra = v.guests > 0 ? ` and their ${v.guests} guest pass${v.guests > 1 ? "es" : ""}` : "";
-    if (!window.confirm(`Remove ${v.fullName}${extra} from the VIP list?`)) return;
+    const extra = v.guests > 0 ? ` Their ${v.guests} guest pass${v.guests === 1 ? "" : "es"} will be removed too.` : "";
+    if (!window.confirm(`Remove ${v.fullName} from the VIP list?${extra}`)) return;
 
     try {
       setRemoving(v.attendeeId);
@@ -119,7 +108,30 @@ export default function VipsPage() {
     }
   }
 
-  // One badge (attendeeId) or several (attendeeIds, comma separated) in a single PDF.
+  async function saveGuests(v: Vip) {
+    const target = guestDraft[v.attendeeId] ?? v.guests;
+    if (target === v.guests) return;
+
+    try {
+      setUpdatingGuests(v.attendeeId);
+      await api.patch(`/vips/${v.attendeeId}/guests`, { guests: target });
+      toast.success("Guest passes updated.");
+      await load();
+      setGuestDraft((d) => {
+        const next = { ...d };
+        delete next[v.attendeeId];
+        return next;
+      });
+    } catch (err: any) {
+      const errors = err?.response?.data?.errors;
+      const first = errors && Object.values(errors)[0];
+      toast.error((Array.isArray(first) && first[0]) || err?.response?.data?.message || "Failed to update guests.");
+    } finally {
+      setUpdatingGuests(null);
+    }
+  }
+
+  // Printable passes (with QR). VIPs work fine without them: Scanner > Find person is always available.
   async function printBadges(key: string, params: Record<string, string | number>, filename: string) {
     try {
       setPrinting(key);
@@ -139,7 +151,7 @@ export default function VipsPage() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err: any) {
-      let message = "Could not generate the badge.";
+      let message = "Could not generate the pass.";
       try {
         const text = await err?.response?.data?.text();
         message = JSON.parse(text).message || message;
@@ -150,35 +162,14 @@ export default function VipsPage() {
     }
   }
 
-  const printOne = (p: Person) =>
-    printBadges(`one-${p.attendeeId}`, { group: "all", attendeeId: p.attendeeId, size: 4 }, `vip-badge-${p.uniqueId || p.attendeeId}.pdf`);
-
-  // VIP + all guests, one PDF.
-  const printFamily = (v: Vip) =>
-    printBadges(
-      `all-${v.attendeeId}`,
-      { group: "all", attendeeIds: [v.attendeeId, ...v.guestList.map((g) => g.attendeeId)].join(","), size: 200 },
-      `vip-passes-${v.uniqueId || v.attendeeId}.pdf`
-    );
-
-  // Guests only (n passes).
-  const printGuests = (v: Vip) =>
-    printBadges(
-      `guests-${v.attendeeId}`,
-      { group: "all", attendeeIds: v.guestList.map((g) => g.attendeeId).join(","), size: 200 },
-      `vip-guest-passes-${v.uniqueId || v.attendeeId}.pdf`
-    );
-
-  const iconBtn = "p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50";
-
   return (
     <Layout>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <PageTitle>VIPs</PageTitle>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            VIPs need no login or email. They are accredited automatically and served from <strong>Scanner → Find person</strong>.
-            Each guest (+n) gets their own pass, so every guest can be printed, scanned and served separately.
+            VIPs need no login or email. They are accredited automatically and served from{" "}
+            <strong>Scanner → Find person</strong>. Every guest gets their own pass, so a VIP with +3 guests has 4 passes.
           </p>
         </div>
 
@@ -186,12 +177,12 @@ export default function VipsPage() {
           <Button
             layout="outline"
             disabled={printing !== null || vips.length === 0}
-            onClick={() => printBadges("all", { group: "vip", size: 200 }, "vip-badges.pdf")}
+            onClick={() => printBadges("all", { group: "vip", size: 200 }, "vip-passes.pdf")}
             className="rounded-2xl h-12 px-5 border-2"
           >
             <span className="inline-flex items-center gap-2 font-bold">
               {printing === "all" ? <Loader2 className="w-5 h-5 animate-spin" /> : <Printer className="w-5 h-5" />}
-              Print all VIP badges
+              Print all passes ({totalPasses})
             </span>
           </Button>
 
@@ -210,7 +201,7 @@ export default function VipsPage() {
       <div className="relative mb-6">
         <Input
           className="pl-11 h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600"
-          placeholder="Search VIPs or guests..."
+          placeholder="Search VIPs..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -221,12 +212,13 @@ export default function VipsPage() {
 
       <div className="rounded-3xl bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 shadow-xl overflow-hidden">
         <div className="w-full overflow-x-auto">
-          <table className="w-full min-w-[720px]">
+          <table className="w-full min-w-[760px]">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide font-bold text-gray-600 dark:text-gray-400 border-b-2 border-gray-200 dark:border-gray-700">
-                <th className="py-4 px-5">Name</th>
+                <th className="py-4 px-3 w-10" />
+                <th className="py-4 px-3">Name</th>
                 <th className="py-4 px-5">Organisation</th>
-                <th className="py-4 px-5">Guests</th>
+                <th className="py-4 px-5">Passes</th>
                 <th className="py-4 px-5">ID</th>
                 <th className="py-4 px-5 text-right">Actions</th>
               </tr>
@@ -234,63 +226,59 @@ export default function VipsPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center">
+                  <td colSpan={6} className="py-12 text-center">
                     <Loader2 className="w-8 h-8 animate-spin mx-auto text-green-600" />
                   </td>
                 </tr>
               ) : shown.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-sm text-gray-500 font-semibold">
+                  <td colSpan={6} className="py-12 text-center text-sm text-gray-500 font-semibold">
                     {vips.length === 0 ? "No VIPs yet." : "No VIPs match your search."}
                   </td>
                 </tr>
               ) : (
                 shown.map((v) => {
-                  const open = expanded.has(v.attendeeId);
+                  const open = expandedId === v.attendeeId;
+                  const draft = guestDraft[v.attendeeId] ?? v.guests;
                   return (
-                    <Fragment key={v.attendeeId}>
+                    <React.Fragment key={v.attendeeId}>
                       <tr className="border-b border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300">
-                        <td className="py-4 px-5">
+                        <td className="py-4 px-3">
+                          <button
+                            onClick={() => setExpandedId(open ? null : v.attendeeId)}
+                            className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            title="Guest passes"
+                          >
+                            {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                          </button>
+                        </td>
+                        <td className="py-4 px-3">
                           <span className="inline-flex items-center gap-2 font-bold uppercase">
-                            {v.guests > 0 ? (
-                              <button onClick={() => toggle(v.attendeeId)} className="text-gray-500" title={open ? "Hide guests" : "Show guests"}>
-                                {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                              </button>
-                            ) : (
-                              <span className="w-4" />
-                            )}
                             <Crown className="w-4 h-4 text-amber-500" />
                             {v.fullName}
                           </span>
                         </td>
                         <td className="py-4 px-5 font-bold uppercase">{v.organization || "—"}</td>
                         <td className="py-4 px-5">
-                          {v.guests > 0 ? (
-                            <span className="inline-flex items-center gap-1 font-semibold">
-                              <Users className="w-4 h-4" />+{v.guests}
-                            </span>
-                          ) : (
-                            "—"
-                          )}
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 dark:bg-gray-700 px-2.5 py-1 text-xs font-bold">
+                            <Users className="w-3.5 h-3.5" />
+                            {1 + v.guests}
+                            {v.guests > 0 && <span className="text-gray-500 font-semibold">(+{v.guests} guest{v.guests === 1 ? "" : "s"})</span>}
+                          </span>
                         </td>
                         <td className="py-4 px-5 font-mono text-xs font-bold">{v.uniqueId || "—"}</td>
                         <td className="py-4 px-5">
                           <div className="flex items-center justify-end gap-1">
-                            {v.guests > 0 ? (
-                              <button
-                                onClick={() => printFamily(v)}
-                                disabled={printing !== null}
-                                className={`${iconBtn} inline-flex items-center gap-1 text-xs font-bold`}
-                                title={`Print VIP + ${v.guests} guest pass(es)`}
-                              >
-                                {printing === `all-${v.attendeeId}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
-                                {v.guests + 1}
-                              </button>
-                            ) : (
-                              <button onClick={() => printOne(v)} disabled={printing !== null} className={iconBtn} title="Print this badge">
-                                {printing === `one-${v.attendeeId}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
-                              </button>
-                            )}
+                            <button
+                              onClick={() =>
+                                printBadges(`host-${v.attendeeId}`, { group: "all", hostId: v.attendeeId, size: 200 }, `vip-passes-${v.uniqueId || v.attendeeId}.pdf`)
+                              }
+                              disabled={printing !== null}
+                              className="p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50"
+                              title={`Print ${1 + v.guests} pass${v.guests === 0 ? "" : "es"} (VIP + guests)`}
+                            >
+                              {printing === `host-${v.attendeeId}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+                            </button>
                             <button
                               onClick={() => handleDelete(v)}
                               disabled={removing === v.attendeeId}
@@ -304,35 +292,76 @@ export default function VipsPage() {
                       </tr>
 
                       {open && (
-                        <tr className="bg-gray-50 dark:bg-gray-900/40 border-b border-gray-100 dark:border-gray-700">
-                          <td colSpan={5} className="px-5 py-3">
-                            <div className="space-y-1">
-                              {[{ ...v, label: "VIP" }, ...v.guestList.map((g, i) => ({ ...g, label: `Guest ${i + 1}` }))].map((p) => (
-                                <div key={p.attendeeId} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm">
-                                  <div className="flex items-center gap-3">
-                                    <span className="w-16 text-xs font-bold uppercase text-gray-500">{p.label}</span>
-                                    <span className="font-semibold uppercase">{p.fullName}</span>
-                                    <span className="font-mono text-xs text-gray-500">{p.uniqueId}</span>
-                                  </div>
-                                  <button onClick={() => printOne(p)} disabled={printing !== null} className={iconBtn} title={`Print ${p.label} pass`}>
-                                    {printing === `one-${p.attendeeId}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
-                                  </button>
+                        <tr className="bg-gray-50 dark:bg-gray-900/30 border-b border-gray-100 dark:border-gray-700">
+                          <td />
+                          <td colSpan={5} className="px-3 py-4">
+                            <div className="flex flex-col lg:flex-row gap-6">
+                              {/* Guest passes */}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-2">Guest passes</p>
+                                {v.guestPasses.length === 0 ? (
+                                  <p className="text-sm text-gray-500">No guests. Use the box on the right to add guest passes.</p>
+                                ) : (
+                                  <ul className="space-y-2">
+                                    {v.guestPasses.map((g) => (
+                                      <li
+                                        key={g.attendeeId}
+                                        className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2"
+                                      >
+                                        <div className="min-w-0">
+                                          <p className="text-sm font-bold uppercase truncate">{g.fullName}</p>
+                                          <p className="font-mono text-[11px] text-gray-500">{g.uniqueId}</p>
+                                        </div>
+                                        <button
+                                          onClick={() =>
+                                            printBadges(`guest-${g.attendeeId}`, { group: "all", attendeeId: g.attendeeId, size: 4 }, `vip-guest-${g.uniqueId || g.attendeeId}.pdf`)
+                                          }
+                                          disabled={printing !== null}
+                                          className="p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50 shrink-0"
+                                          title="Print this guest pass"
+                                        >
+                                          {printing === `guest-${g.attendeeId}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+                                        </button>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+
+                              {/* Change the number of guests */}
+                              <div className="lg:w-64 shrink-0">
+                                <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-2">Number of guests</p>
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={20}
+                                    className="h-11 w-24 rounded-xl border-2 border-gray-200 dark:border-gray-600"
+                                    value={draft}
+                                    onChange={(e) =>
+                                      setGuestDraft((d) => ({ ...d, [v.attendeeId]: Math.max(0, Math.min(20, Number(e.target.value) || 0)) }))
+                                    }
+                                  />
+                                  <Button
+                                    onClick={() => saveGuests(v)}
+                                    disabled={updatingGuests === v.attendeeId || draft === v.guests}
+                                    className="rounded-xl h-11 px-4 bg-gradient-to-r from-green-600 to-emerald-600 border-0"
+                                  >
+                                    <span className="inline-flex items-center gap-2 font-bold">
+                                      {updatingGuests === v.attendeeId && <Loader2 className="w-4 h-4 animate-spin" />}
+                                      Save
+                                    </span>
+                                  </Button>
                                 </div>
-                              ))}
-                            </div>
-                            <div className="pt-2">
-                              <button
-                                onClick={() => printGuests(v)}
-                                disabled={printing !== null}
-                                className="text-xs font-bold text-indigo-600 hover:underline disabled:opacity-50"
-                              >
-                                {printing === `guests-${v.attendeeId}` ? "Preparing…" : `Print the ${v.guests} guest pass${v.guests > 1 ? "es" : ""} only`}
-                              </button>
+                                <p className="mt-2 text-xs text-gray-500 leading-relaxed">
+                                  Adding creates new passes. Removing deletes the highest-numbered guests, unless they already have meal or attendance records.
+                                </p>
+                              </div>
                             </div>
                           </td>
                         </tr>
                       )}
-                    </Fragment>
+                    </React.Fragment>
                   );
                 })
               )}
@@ -395,7 +424,7 @@ export default function VipsPage() {
 
               <div>
                 <label className="block mb-2 text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
-                  Organisation <span className="text-gray-400 text-xs normal-case font-normal">(optional, printed bold on the badge)</span>
+                  Organisation <span className="text-gray-400 text-xs normal-case font-normal">(optional, printed bold on the pass)</span>
                 </label>
                 <Input
                   className="h-12 rounded-2xl border-2 border-gray-200 dark:border-gray-600"
@@ -414,28 +443,9 @@ export default function VipsPage() {
                   max={20}
                   className="h-12 w-28 rounded-2xl border-2 border-gray-200 dark:border-gray-600"
                   value={form.guests}
-                  onChange={(e) => setGuestCount(Number(e.target.value))}
+                  onChange={(e) => setForm({ ...form, guests: Number(e.target.value) })}
                 />
               </div>
-
-              {form.guests > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-500">Guest names are optional. Blank names print as “Guest 1 of {form.lastName.trim() || "…"}”.</p>
-                  {form.guestNames.map((name, i) => (
-                    <Input
-                      key={i}
-                      className="h-11 rounded-2xl border-2 border-gray-200 dark:border-gray-600"
-                      placeholder={`Guest ${i + 1} full name`}
-                      value={name}
-                      onChange={(e) => {
-                        const next = [...form.guestNames];
-                        next[i] = e.target.value;
-                        setForm({ ...form, guestNames: next });
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
 
               <div className="flex gap-3 pt-2">
                 <Button type="button" layout="outline" className="rounded-2xl h-12 flex-1 border-2" onClick={() => setFormOpen(false)}>

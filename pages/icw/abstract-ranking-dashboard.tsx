@@ -95,6 +95,8 @@ function rowsToWorksheet(rows: RankedRow[], subThemeFilterActive: boolean): XLSX
       "Submitted At": formatDate(row.abstract.submittedAt),
       "Corresponding Author": author?.name ?? "",
       "Author Email": author?.email ?? "",
+      // Forced to text so Excel keeps leading zeros and "+234" prefixes
+      "Author Phone": author?.phone ? String(author.phone) : "",
       Affiliation: author?.affiliation ?? "",
     };
   });
@@ -112,6 +114,7 @@ function rowsToWorksheet(rows: RankedRow[], subThemeFilterActive: boolean): XLSX
     { wch: 18 }, // Submitted At
     { wch: 24 }, // Corresponding Author
     { wch: 28 }, // Author Email
+    { wch: 18 }, // Author Phone
     { wch: 28 }, // Affiliation
   ];
   return ws;

@@ -33,6 +33,7 @@ export const ROLE_MENU_ACCESS: Record<IcwRole, string[] | "*"> = {
     "meal-session",
     "print-passes",
     "vips",
+    "oral-scoring"
     // deliberately no "users" — admin cannot see the Add User menu
   ],
   reviewer: ["abstract-review","abstract-reviewer-dashboard"],
@@ -42,7 +43,7 @@ export const ROLE_MENU_ACCESS: Record<IcwRole, string[] | "*"> = {
   // registration, view speakers, download own certificate) rather than
   // this staff sidebar, so nothing here maps to that admin menu set.
   participant: [],
-  abstract_committee_member: ["abstract-management", "abstract-review","abstract-reviewer-dashboard", "abstract-ranking-dashboard"],
+  abstract_committee_member: ["abstract-management", "abstract-review","abstract-reviewer-dashboard", "abstract-ranking-dashboard", "oral-scoring"],
 };
 
 // export function canAccessMenu(role: string | undefined | null, menuKey?: string): boolean {
