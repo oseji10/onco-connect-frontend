@@ -29,6 +29,10 @@ type ApiSuccess<T> = { success: true; message: string; data: T };
 
 const EMPTY = { title: "", firstName: "", lastName: "", organization: "", guests: 0 };
 
+// PassPrintController understands the `hostId` filter, so the row button prints
+// a VIP together with all of their guests. Set to false to print only the VIP's own pass.
+const HOST_PRINT_READY = true;
+
 export default function VipsPage() {
   const [vips, setVips] = useState<Vip[]>([]);
   const [loading, setLoading] = useState(true);
@@ -271,11 +275,17 @@ export default function VipsPage() {
                           <div className="flex items-center justify-end gap-1">
                             <button
                               onClick={() =>
-                                printBadges(`host-${v.attendeeId}`, { group: "all", hostId: v.attendeeId, size: 200 }, `vip-passes-${v.uniqueId || v.attendeeId}.pdf`)
+                                HOST_PRINT_READY
+                                  ? printBadges(`host-${v.attendeeId}`, { group: "vip", hostId: v.attendeeId, size: 200 }, `vip-passes-${v.uniqueId || v.attendeeId}.pdf`)
+                                  : printBadges(`host-${v.attendeeId}`, { group: "all", attendeeId: v.attendeeId, size: 4 }, `vip-pass-${v.uniqueId || v.attendeeId}.pdf`)
                               }
                               disabled={printing !== null}
                               className="p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50"
-                              title={`Print ${1 + v.guests} pass${v.guests === 0 ? "" : "es"} (VIP + guests)`}
+                              title={
+                                HOST_PRINT_READY
+                                  ? `Print ${1 + v.guests} pass${v.guests === 0 ? "" : "es"} (VIP + guests)`
+                                  : "Print this VIP's pass"
+                              }
                             >
                               {printing === `host-${v.attendeeId}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
                             </button>
